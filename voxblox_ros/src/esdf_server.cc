@@ -50,6 +50,9 @@ void EsdfServer::setupRos() {
   esdf_map_pub_ =
       nh_private_.advertise<voxblox_msgs::Layer>("esdf_map_out", 1, false);
 
+  update_result_pub = nh_private_.advertise<voxblox_msgs::UpdateResult>(
+      "update_result", 1, true);
+
   // Set up subscriber.
   esdf_map_sub_ = nh_private_.subscribe("esdf_map_in", 1,
                                         &EsdfServer::esdfMapCallback, this);
@@ -118,6 +121,30 @@ bool EsdfServer::generateEsdfCallback(
 
 void EsdfServer::updateEsdfEvent(const ros::TimerEvent& /*event*/) {
   updateEsdf();
+
+  // Publish updated ESDF
+  Eigen::Vector3d updated_map_min, updated_map_max, total_map_min,
+      total_map_max;
+  esdf_integrator_->getUpdateResultOnce(updated_map_min, updated_map_max,
+                                        total_map_min, total_map_max);
+
+  voxblox_msgs::UpdateResult update_result_msg;
+
+  update_result_msg.update_map_min_x = updated_map_min.x();
+  update_result_msg.update_map_min_y = updated_map_min.y();
+  update_result_msg.update_map_min_z = updated_map_min.z();
+  update_result_msg.update_map_max_x = updated_map_max.x();
+  update_result_msg.update_map_max_y = updated_map_max.y();
+  update_result_msg.update_map_max_z = updated_map_max.z();
+
+  update_result_msg.total_map_min_x = total_map_min.x();
+  update_result_msg.total_map_min_y = total_map_min.y();
+  update_result_msg.total_map_min_z = total_map_min.z();
+  update_result_msg.total_map_max_x = total_map_max.x();
+  update_result_msg.total_map_max_y = total_map_max.y();
+  update_result_msg.total_map_max_z = total_map_max.z();
+
+  update_result_pub.publish(update_result_msg);
 }
 
 void EsdfServer::publishPointclouds() {
