@@ -1,0 +1,13 @@
+float32 update_map_min_x
+float32 update_map_min_y
+float32 update_map_min_z
+float32 update_map_max_x
+float32 update_map_max_y
+float32 update_map_max_z
+
+float32 total_map_min_x
+float32 total_map_min_y
+float32 total_map_min_z
+float32 total_map_max_x
+float32 total_map_max_y
+float32 total_map_max_z
