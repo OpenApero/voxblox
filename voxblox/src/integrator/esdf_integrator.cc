@@ -537,10 +537,10 @@ bool EsdfIntegrator::updateVoxelFromNeighbors(const GlobalIndex& global_index) {
   return false;
 }
 
-void EsdfIntegrator::getUpdateResultOnce(Eigen::Vector3d& updated_map_min,
-                                         Eigen::Vector3d& updated_map_max,
-                                         Eigen::Vector3d& total_map_min,
-                                         Eigen::Vector3d& total_map_max) {
+void EsdfIntegrator::getUpdateResultOnce(Point& updated_map_min,
+                                         Point& updated_map_max,
+                                         Point& total_map_min,
+                                         Point& total_map_max) {
   updated_map_min = updated_map_min_;
   updated_map_max = updated_map_max_;
 
@@ -565,14 +565,13 @@ void EsdfIntegrator::setUpdateResult(
           if (voxel.weight > config_.min_weight) {
             const voxblox::Point voxel_center =
                 block.computeCoordinatesFromVoxelIndex(voxel_index);
-            const Eigen::Vector3d voxel_center_d = voxel_center.cast<double>();
 
             if (!std::isnan(updated_map_min_.x())) {
-              updated_map_min_ = updated_map_min_.cwiseMin(voxel_center_d);
-              updated_map_max_ = updated_map_max_.cwiseMax(voxel_center_d);
+              updated_map_min_ = updated_map_min_.cwiseMin(voxel_center);
+              updated_map_max_ = updated_map_max_.cwiseMax(voxel_center);
             } else {
-              updated_map_min_ = voxel_center_d;
-              updated_map_max_ = voxel_center_d;
+              updated_map_min_ = voxel_center;
+              updated_map_max_ = voxel_center;
             }
           }
         }

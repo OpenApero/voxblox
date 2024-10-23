@@ -123,8 +123,7 @@ void EsdfServer::updateEsdfEvent(const ros::TimerEvent& /*event*/) {
   updateEsdf();
 
   // Publish updated ESDF
-  Eigen::Vector3d updated_map_min, updated_map_max, total_map_min,
-      total_map_max;
+  Point updated_map_min, updated_map_max, total_map_min, total_map_max;
   esdf_integrator_->getUpdateResultOnce(updated_map_min, updated_map_max,
                                         total_map_min, total_map_max);
 

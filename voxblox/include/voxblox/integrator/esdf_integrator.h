@@ -159,10 +159,8 @@ class EsdfIntegrator {
     config_.full_euclidean_distance = full_euclidean;
   }
 
-  void getUpdateResultOnce(Eigen::Vector3d& updated_map_min,
-                           Eigen::Vector3d& updated_map_max,
-                           Eigen::Vector3d& total_map_min,
-                           Eigen::Vector3d& total_map_max);
+  void getUpdateResultOnce(Point& updated_map_min, Point& updated_map_max,
+                           Point& total_map_min, Point& total_map_max);
 
   void setUpdateResult(const BlockIndexList& updated_tsdf_blocks);
 
@@ -191,12 +189,12 @@ class EsdfIntegrator {
   IndexSet updated_blocks_;
 
   // Record the updated region for the current update (will burn after reading).
-  Eigen::Vector3d updated_map_min_;
-  Eigen::Vector3d updated_map_max_;
+  Point updated_map_min_;
+  Point updated_map_max_;
 
   // Record the total updated region (only reset when explicitly called reset).
-  Eigen::Vector3d total_map_min_;
-  Eigen::Vector3d total_map_max_;
+  Point total_map_min_;
+  Point total_map_max_;
 };
 
 }  // namespace voxblox
