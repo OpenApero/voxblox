@@ -38,7 +38,8 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
       accumulate_icp_corrections_(true),
       pointcloud_queue_size_(1),
       num_subscribers_tsdf_map_(0),
-      transformer_(nh, nh_private) {
+      transformer_(nh, nh_private),
+      is_tsdf_updated_(true) {
   getServerConfigFromRosParam(nh_private);
 
   // Advertise topics.
@@ -373,6 +374,7 @@ void TsdfServer::insertPointcloud(
   if (!processed_any) {
     return;
   }
+  is_tsdf_updated_ = true;
 
   if (publish_pointclouds_on_update_) {
     publishPointclouds();
@@ -457,8 +459,9 @@ void TsdfServer::publishMap(bool reset_remote_map) {
   if (!publish_tsdf_map_) {
     return;
   }
+
   int subscribers = this->tsdf_map_pub_.getNumSubscribers();
-  if (subscribers > 0) {
+  if (is_tsdf_updated_ && subscribers > 0) {
     if (num_subscribers_tsdf_map_ < subscribers) {
       // Always reset the remote map and send all when a new subscriber
       // subscribes. A bit of overhead for other subscribers, but better than
@@ -475,7 +478,12 @@ void TsdfServer::publishMap(bool reset_remote_map) {
     }
     this->tsdf_map_pub_.publish(layer_msg);
     publish_map_timer.Stop();
+
+    // Mark tsdf as not updated. It will be updated again when new data comes
+    // in.
+    is_tsdf_updated_ = false;
   }
+
   num_subscribers_tsdf_map_ = subscribers;
 }
 

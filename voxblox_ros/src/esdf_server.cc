@@ -27,7 +27,9 @@ EsdfServer::EsdfServer(const ros::NodeHandle& nh,
       publish_traversable_(false),
       traversability_radius_(1.0),
       incremental_update_(true),
-      num_subscribers_esdf_map_(0) {
+      num_subscribers_esdf_map_(0),
+      is_esdf_updated_(true),
+      is_new_esdf_received_(true) {
   // Set up map and integrator.
   esdf_map_.reset(new EsdfMap(esdf_config));
   esdf_integrator_.reset(new EsdfIntegrator(esdf_integrator_config,
@@ -120,6 +122,11 @@ bool EsdfServer::generateEsdfCallback(
 }
 
 void EsdfServer::updateEsdfEvent(const ros::TimerEvent& /*event*/) {
+  // Don't update if tsdf is not updated.
+  if (!is_tsdf_updated_) {
+    return;
+  }
+
   updateEsdf();
 
   // Publish updated ESDF
@@ -144,6 +151,12 @@ void EsdfServer::updateEsdfEvent(const ros::TimerEvent& /*event*/) {
   update_result_msg.total_map_max_z = total_map_max.z();
 
   update_result_pub.publish(update_result_msg);
+
+  // Mark tsdf as not updated. It will be updated again when new data comes in.
+  is_tsdf_updated_ = false;
+
+  // Mark esdf as updated, meaning that we should publish it.
+  is_esdf_updated_ = true;
 }
 
 void EsdfServer::publishPointclouds() {
@@ -168,31 +181,63 @@ void EsdfServer::publishTraversable() {
 }
 
 void EsdfServer::publishMap(bool reset_remote_map) {
-  if (!publish_esdf_map_) {
+  if (!is_esdf_updated_) {
     return;
   }
 
-  int subscribers = this->esdf_map_pub_.getNumSubscribers();
-  if (subscribers > 0) {
-    if (num_subscribers_esdf_map_ < subscribers) {
-      // Always reset the remote map and send all when a new subscriber
-      // subscribes. A bit of overhead for other subscribers, but better than
-      // inconsistent map states.
-      reset_remote_map = true;
+  if (publish_esdf_map_) {
+    int subscribers = this->esdf_map_pub_.getNumSubscribers();
+    if (subscribers > 0) {
+      if (num_subscribers_esdf_map_ < subscribers) {
+        // Always reset the remote map and send all when a new subscriber
+        // subscribes. A bit of overhead for other subscribers, but better than
+        // inconsistent map states.
+        reset_remote_map = true;
+      }
+      const bool only_updated = !reset_remote_map;
+      timing::Timer publish_map_timer("map/publish_esdf");
+      voxblox_msgs::Layer layer_msg;
+      serializeLayerAsMsg<EsdfVoxel>(this->esdf_map_->getEsdfLayer(),
+                                     only_updated, &layer_msg);
+      if (reset_remote_map) {
+        layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
+      }
+      this->esdf_map_pub_.publish(layer_msg);
+      publish_map_timer.Stop();
+
+      // Mark esdf as not updated. It will be updated again when new data comes
+      // in.
+      is_esdf_updated_ = false;
     }
-    const bool only_updated = !reset_remote_map;
-    timing::Timer publish_map_timer("map/publish_esdf");
-    voxblox_msgs::Layer layer_msg;
-    serializeLayerAsMsg<EsdfVoxel>(this->esdf_map_->getEsdfLayer(),
-                                   only_updated, &layer_msg);
-    if (reset_remote_map) {
-      layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
-    }
-    this->esdf_map_pub_.publish(layer_msg);
-    publish_map_timer.Stop();
+
+    num_subscribers_esdf_map_ = subscribers;
   }
-  num_subscribers_esdf_map_ = subscribers;
-  TsdfServer::publishMap();
+
+  // Publish the TSDF map as well (do not consider tsdf upated flag because it's
+  // cleared in the esdf update)
+  if (publish_tsdf_map_) {
+    int subscribers = this->tsdf_map_pub_.getNumSubscribers();
+    if (subscribers > 0) {
+      if (num_subscribers_tsdf_map_ < subscribers) {
+        // Always reset the remote map and send all when a new subscriber
+        // subscribes. A bit of overhead for other subscribers, but better than
+        // inconsistent map states.
+        reset_remote_map = true;
+      }
+      const bool only_updated = !reset_remote_map;
+      timing::Timer publish_map_timer("map/publish_tsdf");
+      voxblox_msgs::Layer layer_msg;
+      serializeLayerAsMsg<TsdfVoxel>(this->tsdf_map_->getTsdfLayer(),
+                                     only_updated, &layer_msg);
+      if (reset_remote_map) {
+        layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
+      }
+      this->tsdf_map_pub_.publish(layer_msg);
+      publish_map_timer.Stop();
+    }
+
+    num_subscribers_tsdf_map_ = subscribers;
+  }
 }
 
 bool EsdfServer::saveMap(const std::string& file_path) {
@@ -269,6 +314,9 @@ void EsdfServer::esdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
     if (publish_pointclouds_) {
       publishPointclouds();
     }
+
+    // Mark that we have received a new ESDF map.
+    is_new_esdf_received_ = true;
   }
 }
 

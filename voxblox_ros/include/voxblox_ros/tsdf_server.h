@@ -259,6 +259,9 @@ class TsdfServer {
 
   /// Current transform corrections from ICP.
   Transformation icp_corrected_transform_;
+
+  // Status variables
+  bool is_tsdf_updated_;
 };
 
 }  // namespace voxblox

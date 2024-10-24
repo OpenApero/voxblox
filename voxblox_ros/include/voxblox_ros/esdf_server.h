@@ -72,6 +72,12 @@ class EsdfServer : public TsdfServer {
   void disableIncrementalUpdate() { incremental_update_ = false; }
   void enableIncrementalUpdate() { incremental_update_ = true; }
 
+  /**
+   * Dealing with the ESDF update flag.
+   */
+  void clearNewEsdfReceivedFlag() { is_new_esdf_received_ = false; }
+  bool isNewEsdfReceived() const { return is_new_esdf_received_; }
+
   virtual void clear();
 
  protected:
@@ -109,6 +115,10 @@ class EsdfServer : public TsdfServer {
   // ESDF maps.
   std::shared_ptr<EsdfMap> esdf_map_;
   std::unique_ptr<EsdfIntegrator> esdf_integrator_;
+
+  // Variables for updating the ESDF.
+  bool is_esdf_updated_;
+  bool is_new_esdf_received_;
 };
 
 }  // namespace voxblox
