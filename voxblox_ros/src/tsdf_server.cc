@@ -60,6 +60,16 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
   pointcloud_sub_ = nh_.subscribe("pointcloud", pointcloud_queue_size_,
                                   &TsdfServer::insertPointcloud, this);
 
+  // sync point cloud
+  nh_private_.param("sync_queue_size", sync_queue_size_, sync_queue_size_);
+  sync_point_cloud_sub_.subscribe(nh_, "sync_pointcloud", sync_queue_size_);
+  sync_camera_pose_sub_.subscribe(nh_, "sync_camera_transform",
+                                  sync_queue_size_);
+  sync_ = std::make_shared<PointCloudTransformSync>(
+      sync_point_cloud_sub_, sync_camera_pose_sub_, sync_queue_size_);
+  sync_->registerCallback(
+      boost::bind(&TsdfServer::insertSyncPointcloud, this, _1, _2));
+
   mesh_pub_ = nh_private_.advertise<voxblox_msgs::Mesh>("mesh", 1, true);
 
   // Publishing/subscribing to a layer from another node (when using this as
@@ -349,6 +359,32 @@ bool TsdfServer::getNextPointcloudFromQueue(
     }
   }
   return false;
+}
+
+void TsdfServer::insertSyncPointcloud(
+    const sensor_msgs::PointCloud2::ConstPtr& pointcloud_msg_in,
+    const geometry_msgs::TransformStamped::ConstPtr& transform_msg) {
+  Transformation T_G_C;
+  tf::transformMsgToKindr(transform_msg->transform, &T_G_C);
+
+  sensor_msgs::PointCloud2::Ptr pointcloud_msg(
+      new sensor_msgs::PointCloud2(*pointcloud_msg_in));
+
+  constexpr bool is_freespace_pointcloud = false;
+  processPointCloudMessageAndInsert(pointcloud_msg, T_G_C,
+                                    is_freespace_pointcloud);
+
+  is_tsdf_updated_ = true;
+
+  if (publish_pointclouds_on_update_) {
+    publishPointclouds();
+  }
+
+  if (verbose_) {
+    ROS_INFO_STREAM("Timings: " << std::endl << timing::Timing::Print());
+    ROS_INFO_STREAM(
+        "Layer memory: " << tsdf_map_->getTsdfLayer().getMemorySize());
+  }
 }
 
 void TsdfServer::insertPointcloud(

@@ -5,6 +5,8 @@
 #include <queue>
 #include <string>
 
+#include <message_filters/subscriber.h>
+#include <message_filters/time_synchronizer.h>
 #include <pcl/conversions.h>
 #include <pcl/filters/filter.h>
 #include <pcl/point_types.h>
@@ -38,6 +40,11 @@ class TsdfServer {
  public:
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
+  using TransformMsg = geometry_msgs::TransformStamped;
+  using PointCloudMsg = sensor_msgs::PointCloud2;
+  using PointCloudTransformSync =
+      message_filters::TimeSynchronizer<PointCloudMsg, TransformMsg>;
+
   TsdfServer(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private);
   TsdfServer(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private,
              const TsdfMap::Config& config,
@@ -46,6 +53,10 @@ class TsdfServer {
   virtual ~TsdfServer() {}
 
   void getServerConfigFromRosParam(const ros::NodeHandle& nh_private);
+
+  void insertSyncPointcloud(
+      const sensor_msgs::PointCloud2::ConstPtr& pointcloud_msg_in,
+      const geometry_msgs::TransformStamped::ConstPtr& transform_msg);
 
   void insertPointcloud(const sensor_msgs::PointCloud2::Ptr& pointcloud);
 
@@ -134,6 +145,11 @@ class TsdfServer {
   /// Data subscribers.
   ros::Subscriber pointcloud_sub_;
   ros::Subscriber freespace_pointcloud_sub_;
+
+  /// Sync subscribers.
+  message_filters::Subscriber<PointCloudMsg> sync_point_cloud_sub_;
+  message_filters::Subscriber<TransformMsg> sync_camera_pose_sub_;
+  std::shared_ptr<PointCloudTransformSync> sync_;
 
   /// Publish markers for visualization.
   ros::Publisher mesh_pub_;
@@ -227,6 +243,7 @@ class TsdfServer {
   /// Subscriber settings.
   int pointcloud_queue_size_;
   int num_subscribers_tsdf_map_;
+  int sync_queue_size_;
 
   // Maps and integrators.
   std::shared_ptr<TsdfMap> tsdf_map_;
