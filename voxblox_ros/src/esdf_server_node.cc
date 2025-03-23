@@ -12,6 +12,12 @@ int main(int argc, char** argv) {
 
   voxblox::EsdfServer node(nh, nh_private);
 
-  ros::spin();
+  // TODO (kaixqu): Make this a parameter.
+  int num_threads = 8;
+  ros::AsyncSpinner spinner(num_threads);
+  spinner.start();
+
+  // ros::waitForShutdown() blocks until ROS is shut down
+  ros::waitForShutdown();
   return 0;
 }
