@@ -277,7 +277,13 @@ bool TsdfServer::resetMapUpdateStatus() {
 void TsdfServer::processPointCloudMessageAndInsert(
     const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
     const Transformation& T_G_C, const bool is_freespace_pointcloud) {
-  updated_sensor_poses_.push_back(T_G_C);
+  // Add a transform from optical frame to camera frame.
+  Transformation T_Optical_Camera;
+  T_Optical_Camera.setIdentity();
+  T_Optical_Camera.getRotation() = Rotation(0.5, -0.5, -0.5, -0.5);
+
+  Transformation T_World_Camera = T_G_C * T_Optical_Camera;
+  updated_sensor_poses_.push_back(T_World_Camera);
 
   // Convert the PCL pointcloud into our awesome format.
 
