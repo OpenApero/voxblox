@@ -7,6 +7,7 @@ string layer_type  # See voxblox::voxel_types
 uint8 action   # See action defines below
 
 voxblox_msgs/Block[] blocks
+geometry_msgs/Pose[] sensor_poses
 
 # Action definitions
 # Update all blocks that are part of this message to the new state,

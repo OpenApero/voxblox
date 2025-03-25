@@ -139,12 +139,6 @@ class EsdfIntegrator {
     updated_blocks_.clear();
     open_.clear();
     raise_ = AlignedQueue<GlobalIndex>();
-
-    updated_map_min_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
-    updated_map_max_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
-
-    total_map_min_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
-    total_map_max_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
   }
   /// Update some specific settings.
   float getEsdfMaxDistance() const { return config_.max_distance_m; }
@@ -158,11 +152,6 @@ class EsdfIntegrator {
   void setFullEuclidean(bool full_euclidean) {
     config_.full_euclidean_distance = full_euclidean;
   }
-
-  void getUpdateResultOnce(Point& updated_map_min, Point& updated_map_max,
-                           Point& total_map_min, Point& total_map_max);
-
-  void setUpdateResult(const BlockIndexList& updated_tsdf_blocks);
 
  protected:
   Config config_;
@@ -187,14 +176,6 @@ class EsdfIntegrator {
   FloatingPoint voxel_size_;
 
   IndexSet updated_blocks_;
-
-  // Record the updated region for the current update (will burn after reading).
-  Point updated_map_min_;
-  Point updated_map_max_;
-
-  // Record the total updated region (only reset when explicitly called reset).
-  Point total_map_min_;
-  Point total_map_max_;
 };
 
 }  // namespace voxblox

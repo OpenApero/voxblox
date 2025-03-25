@@ -7,7 +7,6 @@
 #include <voxblox/core/esdf_map.h>
 #include <voxblox/integrator/esdf_integrator.h>
 #include <voxblox_msgs/Layer.h>
-#include <voxblox_msgs/UpdateResult.h>
 
 #include "voxblox_ros/tsdf_server.h"
 
@@ -92,9 +91,6 @@ class EsdfServer : public TsdfServer {
 
   /// Publish the complete map for other nodes to consume.
   ros::Publisher esdf_map_pub_;
-
-  /// Publish the update result.
-  ros::Publisher update_result_pub;
 
   /// Subscriber to subscribe to another node generating the map.
   ros::Subscriber esdf_map_sub_;

@@ -18,12 +18,6 @@ EsdfIntegrator::EsdfIntegrator(const Config& config,
   CHECK_NEAR(esdf_layer_->voxel_size(), tsdf_layer_->voxel_size(), 1e-6);
 
   open_.setNumBuckets(config_.num_buckets, config_.max_distance_m);
-
-  updated_map_min_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
-  updated_map_max_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
-
-  total_map_min_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
-  total_map_max_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
 }
 
 // Used for planning - allocates sphere around as observed but occupied,
@@ -110,7 +104,6 @@ void EsdfIntegrator::updateFromTsdfLayerBatch() {
 void EsdfIntegrator::updateFromTsdfLayer(bool clear_updated_flag) {
   BlockIndexList tsdf_blocks;
   tsdf_layer_->getAllUpdatedBlocks(Update::kEsdf, &tsdf_blocks);
-  setUpdateResult(tsdf_blocks);
 
   tsdf_blocks.insert(tsdf_blocks.end(), updated_blocks_.begin(),
                      updated_blocks_.end());
@@ -535,60 +528,6 @@ bool EsdfIntegrator::updateVoxelFromNeighbors(const GlobalIndex& global_index) {
     }
   }
   return false;
-}
-
-void EsdfIntegrator::getUpdateResultOnce(Point& updated_map_min,
-                                         Point& updated_map_max,
-                                         Point& total_map_min,
-                                         Point& total_map_max) {
-  updated_map_min = updated_map_min_;
-  updated_map_max = updated_map_max_;
-
-  total_map_min = total_map_min_;
-  total_map_max = total_map_max_;
-
-  updated_map_min_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
-  updated_map_max_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
-}
-
-void EsdfIntegrator::setUpdateResult(
-    const BlockIndexList& updated_tsdf_blocks) {
-  for (const auto& index : updated_tsdf_blocks) {
-    // Iterate over all voxels in said blocks.
-    const auto& block = tsdf_layer_->getBlockByIndex(index);
-    const int vps = block.voxels_per_side();
-    voxblox::VoxelIndex voxel_index = voxblox::VoxelIndex::Zero();
-    for (voxel_index.x() = 0; voxel_index.x() < vps; ++voxel_index.x()) {
-      for (voxel_index.y() = 0; voxel_index.y() < vps; ++voxel_index.y()) {
-        for (voxel_index.z() = 0; voxel_index.z() < vps; ++voxel_index.z()) {
-          const auto& voxel = block.getVoxelByVoxelIndex(voxel_index);
-          if (voxel.weight > config_.min_weight) {
-            const voxblox::Point voxel_center =
-                block.computeCoordinatesFromVoxelIndex(voxel_index);
-
-            if (!std::isnan(updated_map_min_.x())) {
-              updated_map_min_ = updated_map_min_.cwiseMin(voxel_center);
-              updated_map_max_ = updated_map_max_.cwiseMax(voxel_center);
-            } else {
-              updated_map_min_ = voxel_center;
-              updated_map_max_ = voxel_center;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // If the updated map is not nan, update the total map.
-  if (!std::isnan(updated_map_min_.x())) {
-    if (!std::isnan(total_map_min_.x())) {
-      total_map_min_ = total_map_min_.cwiseMin(updated_map_min_);
-      total_map_max_ = total_map_max_.cwiseMax(updated_map_max_);
-    } else {
-      total_map_min_ = updated_map_min_;
-      total_map_max_ = updated_map_max_;
-    }
-  }
 }
 
 }  // namespace voxblox

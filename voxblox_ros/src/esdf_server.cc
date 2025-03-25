@@ -3,6 +3,8 @@
 #include "voxblox_ros/conversions.h"
 #include "voxblox_ros/ros_params.h"
 
+#include <minkindr_conversions/kindr_msg.h>
+
 namespace voxblox {
 
 EsdfServer::EsdfServer(const ros::NodeHandle& nh,
@@ -51,9 +53,6 @@ void EsdfServer::setupRos() {
 
   esdf_map_pub_ =
       nh_private_.advertise<voxblox_msgs::Layer>("esdf_map_out", 1, false);
-
-  update_result_pub = nh_private_.advertise<voxblox_msgs::UpdateResult>(
-      "update_result", 1, true);
 
   // Set up subscriber.
   esdf_map_sub_ = nh_private_.subscribe("esdf_map_in", 1,
@@ -129,29 +128,6 @@ void EsdfServer::updateEsdfEvent(const ros::TimerEvent& /*event*/) {
 
   updateEsdf();
 
-  // Publish updated ESDF
-  Point updated_map_min, updated_map_max, total_map_min, total_map_max;
-  esdf_integrator_->getUpdateResultOnce(updated_map_min, updated_map_max,
-                                        total_map_min, total_map_max);
-
-  voxblox_msgs::UpdateResult update_result_msg;
-
-  update_result_msg.update_map_min_x = updated_map_min.x();
-  update_result_msg.update_map_min_y = updated_map_min.y();
-  update_result_msg.update_map_min_z = updated_map_min.z();
-  update_result_msg.update_map_max_x = updated_map_max.x();
-  update_result_msg.update_map_max_y = updated_map_max.y();
-  update_result_msg.update_map_max_z = updated_map_max.z();
-
-  update_result_msg.total_map_min_x = total_map_min.x();
-  update_result_msg.total_map_min_y = total_map_min.y();
-  update_result_msg.total_map_min_z = total_map_min.z();
-  update_result_msg.total_map_max_x = total_map_max.x();
-  update_result_msg.total_map_max_y = total_map_max.y();
-  update_result_msg.total_map_max_z = total_map_max.z();
-
-  update_result_pub.publish(update_result_msg);
-
   // Mark tsdf as not updated. It will be updated again when new data comes in.
   is_tsdf_updated_ = false;
 
@@ -202,6 +178,14 @@ void EsdfServer::publishMap(bool reset_remote_map) {
       if (reset_remote_map) {
         layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
       }
+
+      // Send updated sensor poses.
+      for (auto& pose : updated_sensor_poses_) {
+        geometry_msgs::Pose pose_msg;
+        tf::poseKindrToMsg(pose.cast<double>(), &pose_msg);
+        layer_msg.sensor_poses.push_back(pose_msg);
+      }
+
       this->esdf_map_pub_.publish(layer_msg);
       publish_map_timer.Stop();
 
@@ -239,6 +223,14 @@ void EsdfServer::publishMap(bool reset_remote_map) {
       if (reset_remote_map) {
         layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
       }
+
+      // Send updated sensor poses.
+      for (auto& pose : updated_sensor_poses_) {
+        geometry_msgs::Pose pose_msg;
+        tf::poseKindrToMsg(pose.cast<double>(), &pose_msg);
+        layer_msg.sensor_poses.push_back(pose_msg);
+      }
+
       this->tsdf_map_pub_.publish(layer_msg);
       publish_map_timer.Stop();
 
@@ -252,6 +244,9 @@ void EsdfServer::publishMap(bool reset_remote_map) {
 
     num_subscribers_tsdf_map_ = subscribers;
   }
+
+  // Clear the updated sensor poses if we have published the map.
+  updated_sensor_poses_.clear();
 }
 
 bool EsdfServer::saveMap(const std::string& file_path) {
@@ -320,6 +315,50 @@ void EsdfServer::esdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
 
   bool success =
       deserializeMsgToLayer<EsdfVoxel>(layer_msg, esdf_map_->getEsdfLayerPtr());
+
+  // Update the updated sensor poses.
+  for (const geometry_msgs::Pose& pose_msg : layer_msg.sensor_poses) {
+    kindr::minimal::QuatTransformation pose;
+    tf::poseMsgToKindr(pose_msg, &pose);
+    updated_sensor_poses_.push_back(pose.cast<FloatingPoint>());
+  }
+
+  // Update the bounding box of the map.
+  for (const voxblox_msgs::Block& block_msg : layer_msg.blocks) {
+    BlockIndex index(block_msg.x_index, block_msg.y_index, block_msg.z_index);
+    const auto& block = esdf_map_->getEsdfLayerPtr()->getBlockByIndex(index);
+    const int vps = block.voxels_per_side();
+
+    const voxblox::VoxelIndex min_corner(0, 0, 0);
+    const voxblox::VoxelIndex max_corner(vps - 1, vps - 1, vps - 1);
+
+    const voxblox::Point voxel_min =
+        block.computeCoordinatesFromVoxelIndex(min_corner);
+    const voxblox::Point voxel_max =
+        block.computeCoordinatesFromVoxelIndex(max_corner);
+
+    const voxblox::Point block_min = voxel_min.cwiseMin(voxel_max);
+    const voxblox::Point block_max = voxel_min.cwiseMax(voxel_max);
+
+    if (!std::isnan(updated_map_min_.x())) {
+      updated_map_min_ = updated_map_min_.cwiseMin(block_min);
+      updated_map_max_ = updated_map_max_.cwiseMax(block_max);
+    } else {
+      updated_map_min_ = block_min;
+      updated_map_max_ = block_max;
+    }
+  }
+
+  // If the updated map is not nan, update the total map.
+  if (!std::isnan(updated_map_min_.x())) {
+    if (!std::isnan(total_map_min_.x())) {
+      total_map_min_ = total_map_min_.cwiseMin(updated_map_min_);
+      total_map_max_ = total_map_max_.cwiseMax(updated_map_max_);
+    } else {
+      total_map_min_ = updated_map_min_;
+      total_map_max_ = updated_map_max_;
+    }
+  }
 
   if (!success) {
     ROS_ERROR_THROTTLE(10, "Got an invalid ESDF map message!");

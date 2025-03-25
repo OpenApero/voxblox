@@ -157,6 +157,13 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
         nh_private_.createTimer(ros::Duration(publish_map_every_n_sec),
                                 &TsdfServer::publishMapEvent, this);
   }
+
+  // Initialize the map update status
+  FloatingPoint nan = std::numeric_limits<FloatingPoint>::quiet_NaN();
+  updated_map_min_.fill(nan);
+  updated_map_max_.fill(nan);
+  total_map_min_.fill(nan);
+  total_map_max_.fill(nan);
 }
 
 void TsdfServer::getServerConfigFromRosParam(
@@ -221,9 +228,57 @@ void TsdfServer::getServerConfigFromRosParam(
   color_map_->setMaxValue(intensity_max_value);
 }
 
+bool TsdfServer::getUpdatedMapRegion(Eigen::Vector3d* updated_map_min,
+                                     Eigen::Vector3d* updated_map_max) {
+  if (std::isnan(updated_map_min_.x())) {
+    return false;
+  }
+
+  *updated_map_min = updated_map_min_.cast<double>();
+  *updated_map_max = updated_map_max_.cast<double>();
+  return true;
+}
+
+bool TsdfServer::getTotalMapRegion(Eigen::Vector3d* total_map_min,
+                                   Eigen::Vector3d* total_map_max) {
+  if (std::isnan(total_map_min_.x())) {
+    return false;
+  }
+
+  *total_map_min = total_map_min_.cast<double>();
+  *total_map_max = total_map_max_.cast<double>();
+  return true;
+}
+
+bool TsdfServer::getUpdatedSensorPoses(
+    std::vector<Eigen::Vector3d>* positions,
+    std::vector<Eigen::Quaterniond>* orientations) {
+  if (updated_sensor_poses_.empty()) {
+    return false;
+  }
+
+  positions->clear();
+  orientations->clear();
+  for (const Transformation& pose : updated_sensor_poses_) {
+    positions->push_back(pose.getPosition().cast<double>());
+    orientations->push_back(pose.getEigenQuaternion().cast<double>());
+  }
+  return true;
+}
+
+bool TsdfServer::resetMapUpdateStatus() {
+  updated_sensor_poses_.clear();
+  updated_map_min_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
+  updated_map_max_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
+  // Don't reset total map min/max.
+  return true;
+}
+
 void TsdfServer::processPointCloudMessageAndInsert(
     const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
     const Transformation& T_G_C, const bool is_freespace_pointcloud) {
+  updated_sensor_poses_.push_back(T_G_C);
+
   // Convert the PCL pointcloud into our awesome format.
 
   // Horrible hack fix to fix color parsing colors in PCL.
@@ -512,6 +567,14 @@ void TsdfServer::publishMap(bool reset_remote_map) {
     if (reset_remote_map) {
       layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
     }
+
+    // Send updated sensor poses.
+    for (auto& pose : updated_sensor_poses_) {
+      geometry_msgs::Pose pose_msg;
+      tf::poseKindrToMsg(pose.cast<double>(), &pose_msg);
+      layer_msg.sensor_poses.push_back(pose_msg);
+    }
+
     this->tsdf_map_pub_.publish(layer_msg);
     publish_map_timer.Stop();
 
@@ -521,6 +584,9 @@ void TsdfServer::publishMap(bool reset_remote_map) {
     for (const BlockIndex& index : block_list) {
       layer->getBlockPtrByIndex(index)->updated().reset(Update::kMap);
     }
+
+    // Clear the updated sensor poses if we have published the map.
+    updated_sensor_poses_.clear();
 
     // Mark tsdf as not updated. It will be updated again when new data comes
     // in.
@@ -692,6 +758,50 @@ void TsdfServer::tsdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
 
   bool success =
       deserializeMsgToLayer<TsdfVoxel>(layer_msg, tsdf_map_->getTsdfLayerPtr());
+
+  // Update the updated sensor poses.
+  for (const geometry_msgs::Pose& pose_msg : layer_msg.sensor_poses) {
+    kindr::minimal::QuatTransformation pose;
+    tf::poseMsgToKindr(pose_msg, &pose);
+    updated_sensor_poses_.push_back(pose.cast<FloatingPoint>());
+  }
+
+  // Update the bounding box of the map.
+  for (const voxblox_msgs::Block& block_msg : layer_msg.blocks) {
+    BlockIndex index(block_msg.x_index, block_msg.y_index, block_msg.z_index);
+    const auto& block = tsdf_map_->getTsdfLayerPtr()->getBlockByIndex(index);
+    const int vps = block.voxels_per_side();
+
+    const voxblox::VoxelIndex min_corner(0, 0, 0);
+    const voxblox::VoxelIndex max_corner(vps - 1, vps - 1, vps - 1);
+
+    const voxblox::Point voxel_min =
+        block.computeCoordinatesFromVoxelIndex(min_corner);
+    const voxblox::Point voxel_max =
+        block.computeCoordinatesFromVoxelIndex(max_corner);
+
+    const voxblox::Point block_min = voxel_min.cwiseMin(voxel_max);
+    const voxblox::Point block_max = voxel_min.cwiseMax(voxel_max);
+
+    if (!std::isnan(updated_map_min_.x())) {
+      updated_map_min_ = updated_map_min_.cwiseMin(block_min);
+      updated_map_max_ = updated_map_max_.cwiseMax(block_max);
+    } else {
+      updated_map_min_ = block_min;
+      updated_map_max_ = block_max;
+    }
+  }
+
+  // If the updated map is not nan, update the total map.
+  if (!std::isnan(updated_map_min_.x())) {
+    if (!std::isnan(total_map_min_.x())) {
+      total_map_min_ = total_map_min_.cwiseMin(updated_map_min_);
+      total_map_max_ = total_map_max_.cwiseMax(updated_map_max_);
+    } else {
+      total_map_min_ = updated_map_min_;
+      total_map_max_ = updated_map_max_;
+    }
+  }
 
   if (!success) {
     ROS_ERROR_THROTTLE(10, "Got an invalid TSDF map message!");

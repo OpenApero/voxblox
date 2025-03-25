@@ -54,6 +54,14 @@ class TsdfServer {
 
   void getServerConfigFromRosParam(const ros::NodeHandle& nh_private);
 
+  bool getUpdatedMapRegion(Eigen::Vector3d* updated_map_min,
+                           Eigen::Vector3d* updated_map_max);
+  bool getTotalMapRegion(Eigen::Vector3d* total_map_min,
+                         Eigen::Vector3d* total_map_max);
+  bool getUpdatedSensorPoses(std::vector<Eigen::Vector3d>* positions,
+                             std::vector<Eigen::Quaterniond>* orientations);
+  bool resetMapUpdateStatus();
+
   void insertSyncPointcloud(
       const sensor_msgs::PointCloud2::ConstPtr& pointcloud_msg_in,
       const geometry_msgs::TransformStamped::ConstPtr& transform_msg);
@@ -279,6 +287,13 @@ class TsdfServer {
 
   // Status variables
   bool is_tsdf_updated_;
+
+  // Map update status
+  std::vector<Transformation> updated_sensor_poses_;
+  Point updated_map_min_;
+  Point updated_map_max_;
+  Point total_map_min_;
+  Point total_map_max_;
 };
 
 }  // namespace voxblox
