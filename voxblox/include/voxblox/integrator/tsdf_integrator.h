@@ -67,7 +67,7 @@ class TsdfIntegratorBase {
     bool use_sparsity_compensation_factor = false;
     float sparsity_compensation_factor = 1.0f;
 
-    size_t integrator_threads = std::thread::hardware_concurrency();
+    int integrator_threads = std::thread::hardware_concurrency();
 
     /// Mode of the ThreadSafeIndex, determines the integration order of the
     /// rays. Options: "mixed", "sorted"
