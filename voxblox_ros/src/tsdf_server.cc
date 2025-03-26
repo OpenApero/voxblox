@@ -280,7 +280,7 @@ void TsdfServer::processPointCloudMessageAndInsert(
   // Add a transform from optical frame to camera frame.
   Transformation T_Optical_Camera;
   T_Optical_Camera.setIdentity();
-  T_Optical_Camera.getRotation() = Rotation(0.5, -0.5, -0.5, -0.5);
+  T_Optical_Camera.getRotation() = Rotation(0.5, 0.5, -0.5, 0.5);
 
   Transformation T_World_Camera = T_G_C * T_Optical_Camera;
   updated_sensor_poses_.push_back(T_World_Camera);
