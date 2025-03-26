@@ -104,7 +104,6 @@ void EsdfIntegrator::updateFromTsdfLayerBatch() {
 void EsdfIntegrator::updateFromTsdfLayer(bool clear_updated_flag) {
   BlockIndexList tsdf_blocks;
   tsdf_layer_->getAllUpdatedBlocks(Update::kEsdf, &tsdf_blocks);
-
   tsdf_blocks.insert(tsdf_blocks.end(), updated_blocks_.begin(),
                      updated_blocks_.end());
   updated_blocks_.clear();

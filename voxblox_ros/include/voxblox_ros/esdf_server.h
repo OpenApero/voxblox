@@ -71,12 +71,6 @@ class EsdfServer : public TsdfServer {
   void disableIncrementalUpdate() { incremental_update_ = false; }
   void enableIncrementalUpdate() { incremental_update_ = true; }
 
-  /**
-   * Dealing with the ESDF update flag.
-   */
-  void clearNewEsdfReceivedFlag() { is_new_esdf_received_ = false; }
-  bool isNewEsdfReceived() const { return is_new_esdf_received_; }
-
   virtual void clear();
 
  protected:
@@ -114,7 +108,6 @@ class EsdfServer : public TsdfServer {
 
   // Variables for updating the ESDF.
   bool is_esdf_updated_;
-  bool is_new_esdf_received_;
 };
 
 }  // namespace voxblox

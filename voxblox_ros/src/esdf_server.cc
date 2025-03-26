@@ -30,8 +30,7 @@ EsdfServer::EsdfServer(const ros::NodeHandle& nh,
       traversability_radius_(1.0),
       incremental_update_(true),
       num_subscribers_esdf_map_(0),
-      is_esdf_updated_(true),
-      is_new_esdf_received_(true) {
+      is_esdf_updated_(true) {
   // Set up map and integrator.
   esdf_map_.reset(new EsdfMap(esdf_config));
   esdf_integrator_.reset(new EsdfIntegrator(esdf_integrator_config,
@@ -367,9 +366,6 @@ void EsdfServer::esdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
     if (publish_pointclouds_) {
       publishPointclouds();
     }
-
-    // Mark that we have received a new ESDF map.
-    is_new_esdf_received_ = true;
   }
 }
 
