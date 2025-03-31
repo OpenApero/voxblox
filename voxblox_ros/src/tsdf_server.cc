@@ -277,8 +277,6 @@ bool TsdfServer::resetMapUpdateStatus() {
 void TsdfServer::processPointCloudMessageAndInsert(
     const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
     const Transformation& T_G_C, const bool is_freespace_pointcloud) {
-  updated_sensor_poses_.push_back(T_G_C);
-
   // Convert the PCL pointcloud into our awesome format.
 
   // Horrible hack fix to fix color parsing colors in PCL.
@@ -386,6 +384,9 @@ void TsdfServer::processPointCloudMessageAndInsert(
 
   // Callback for inheriting classes.
   newPoseCallback(T_G_C);
+
+  // Insert this sensor pose into the updated sensor poses.
+  updated_sensor_poses_.push_back(T_G_C);
 }
 
 // Checks if we can get the next message from queue.
