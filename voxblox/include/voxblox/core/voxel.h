@@ -46,6 +46,13 @@ struct IntensityVoxel {
   float weight = 0.0f;
 };
 
+struct ObjectProbabilityVoxel {
+  ProbabilityArray commonObjectsObservedProbs;
+  ProbabilityArray ooiObservedProbs;
+
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+
 /// Used for serialization only.
 namespace voxel_types {
 const std::string kNotSerializable = "not_serializable";
@@ -53,6 +60,7 @@ const std::string kTsdf = "tsdf";
 const std::string kEsdf = "esdf";
 const std::string kOccupancy = "occupancy";
 const std::string kIntensity = "intensity";
+const std::string kObjectProbability = "object_probability";
 }  // namespace voxel_types
 
 template <typename Type>
@@ -78,6 +86,11 @@ inline std::string getVoxelType<OccupancyVoxel>() {
 template <>
 inline std::string getVoxelType<IntensityVoxel>() {
   return voxel_types::kIntensity;
+}
+
+template <>
+inline std::string getVoxelType<ObjectProbabilityVoxel>() {
+  return voxel_types::kObjectProbability;
 }
 
 }  // namespace voxblox
