@@ -759,6 +759,16 @@ void TsdfServer::publishMapEvent(const ros::TimerEvent& /*event*/) {
 }
 
 void TsdfServer::clear() {
+  is_tsdf_updated_ = true;
+
+  updated_sensor_poses_.clear();
+
+  FloatingPoint nan = std::numeric_limits<FloatingPoint>::quiet_NaN();
+  updated_map_min_.fill(nan);
+  updated_map_max_.fill(nan);
+  total_map_min_.fill(nan);
+  total_map_max_.fill(nan);
+
   tsdf_map_->getTsdfLayerPtr()->removeAllBlocks();
   mesh_layer_->clear();
 
