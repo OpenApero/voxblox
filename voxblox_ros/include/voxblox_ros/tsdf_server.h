@@ -139,6 +139,9 @@ class TsdfServer {
   void tsdfMapCallback(const voxblox_msgs::Layer& layer_msg);
 
  protected:
+  /// Expands the updated and total map bounding boxes to include the block.
+  void expandMapRegionByBlock(const BlockIndex& block_index);
+
   /**
    * Gets the next pointcloud that has an available transform to process from
    * the queue.

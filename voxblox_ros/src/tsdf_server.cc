@@ -277,6 +277,39 @@ bool TsdfServer::resetMapUpdateStatus() {
   return true;
 }
 
+void TsdfServer::expandMapRegionByBlock(const BlockIndex& block_index) {
+  const auto& block =
+      tsdf_map_->getTsdfLayerPtr()->getBlockByIndex(block_index);
+  const int vps = block.voxels_per_side();
+
+  const voxblox::VoxelIndex min_corner(0, 0, 0);
+  const voxblox::VoxelIndex max_corner(vps - 1, vps - 1, vps - 1);
+
+  const voxblox::Point voxel_min =
+      block.computeCoordinatesFromVoxelIndex(min_corner);
+  const voxblox::Point voxel_max =
+      block.computeCoordinatesFromVoxelIndex(max_corner);
+
+  const voxblox::Point block_min = voxel_min.cwiseMin(voxel_max);
+  const voxblox::Point block_max = voxel_min.cwiseMax(voxel_max);
+
+  if (!std::isnan(updated_map_min_.x())) {
+    updated_map_min_ = updated_map_min_.cwiseMin(block_min);
+    updated_map_max_ = updated_map_max_.cwiseMax(block_max);
+  } else {
+    updated_map_min_ = block_min;
+    updated_map_max_ = block_max;
+  }
+
+  if (!std::isnan(total_map_min_.x())) {
+    total_map_min_ = total_map_min_.cwiseMin(block_min);
+    total_map_max_ = total_map_max_.cwiseMax(block_max);
+  } else {
+    total_map_min_ = block_min;
+    total_map_max_ = block_max;
+  }
+}
+
 void TsdfServer::processPointCloudMessageAndInsert(
     const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
     const Transformation& T_G_C, const bool is_freespace_pointcloud) {
@@ -390,6 +423,14 @@ void TsdfServer::processPointCloudMessageAndInsert(
 
   // Insert this sensor pose into the updated sensor poses.
   updated_sensor_poses_.push_back(T_G_C);
+
+  // Update the bounding box of the updated and total map regions.
+  BlockIndexList updated_blocks;
+  tsdf_map_->getTsdfLayerPtr()->getAllUpdatedBlocks(Update::kMap,
+                                                    &updated_blocks);
+  for (const BlockIndex& index : updated_blocks) {
+    expandMapRegionByBlock(index);
+  }
 }
 
 // Checks if we can get the next message from queue.
@@ -795,38 +836,7 @@ void TsdfServer::tsdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
   // Update the bounding box of the map.
   for (const voxblox_msgs::Block& block_msg : layer_msg.blocks) {
     BlockIndex index(block_msg.x_index, block_msg.y_index, block_msg.z_index);
-    const auto& block = tsdf_map_->getTsdfLayerPtr()->getBlockByIndex(index);
-    const int vps = block.voxels_per_side();
-
-    const voxblox::VoxelIndex min_corner(0, 0, 0);
-    const voxblox::VoxelIndex max_corner(vps - 1, vps - 1, vps - 1);
-
-    const voxblox::Point voxel_min =
-        block.computeCoordinatesFromVoxelIndex(min_corner);
-    const voxblox::Point voxel_max =
-        block.computeCoordinatesFromVoxelIndex(max_corner);
-
-    const voxblox::Point block_min = voxel_min.cwiseMin(voxel_max);
-    const voxblox::Point block_max = voxel_min.cwiseMax(voxel_max);
-
-    if (!std::isnan(updated_map_min_.x())) {
-      updated_map_min_ = updated_map_min_.cwiseMin(block_min);
-      updated_map_max_ = updated_map_max_.cwiseMax(block_max);
-    } else {
-      updated_map_min_ = block_min;
-      updated_map_max_ = block_max;
-    }
-  }
-
-  // If the updated map is not nan, update the total map.
-  if (!std::isnan(updated_map_min_.x())) {
-    if (!std::isnan(total_map_min_.x())) {
-      total_map_min_ = total_map_min_.cwiseMin(updated_map_min_);
-      total_map_max_ = total_map_max_.cwiseMax(updated_map_max_);
-    } else {
-      total_map_min_ = updated_map_min_;
-      total_map_max_ = updated_map_max_;
-    }
+    expandMapRegionByBlock(index);
   }
 
   if (!success) {
