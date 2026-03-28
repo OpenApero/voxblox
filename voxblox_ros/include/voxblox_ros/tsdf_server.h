@@ -156,7 +156,7 @@ class TsdfServer {
 
   /// Sync subscribers.
   message_filters::Subscriber<PointCloudMsg> sync_point_cloud_sub_;
-  message_filters::Subscriber<TransformMsg> sync_camera_pose_sub_;
+  message_filters::Subscriber<TransformMsg> sync_camera_transform_sub_;
   std::shared_ptr<PointCloudTransformSync> sync_;
 
   /// Publish markers for visualization.

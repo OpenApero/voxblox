@@ -64,10 +64,10 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
   // sync point cloud
   nh_private_.param("sync_queue_size", sync_queue_size_, sync_queue_size_);
   sync_point_cloud_sub_.subscribe(nh_, "sync_pointcloud", sync_queue_size_);
-  sync_camera_pose_sub_.subscribe(nh_, "sync_camera_transform",
-                                  sync_queue_size_);
+  sync_camera_transform_sub_.subscribe(nh_, "sync_camera_transform",
+                                       sync_queue_size_);
   sync_ = std::make_shared<PointCloudTransformSync>(
-      sync_point_cloud_sub_, sync_camera_pose_sub_, sync_queue_size_);
+      sync_point_cloud_sub_, sync_camera_transform_sub_, sync_queue_size_);
   sync_->registerCallback(
       boost::bind(&TsdfServer::insertSyncPointcloud, this, _1, _2));
 
