@@ -253,16 +253,16 @@ bool TsdfServer::getTotalMapRegion(Eigen::Vector3d* total_map_min,
   return true;
 }
 
-bool TsdfServer::getUpdatedSensorPoses(
+bool TsdfServer::getMappedOpticalFrameTransforms(
     std::vector<Eigen::Vector3d>* positions,
     std::vector<Eigen::Quaterniond>* orientations) {
-  if (updated_sensor_poses_.empty()) {
+  if (mapped_optical_frame_transforms_.empty()) {
     return false;
   }
 
   positions->clear();
   orientations->clear();
-  for (const Transformation& pose : updated_sensor_poses_) {
+  for (const Transformation& pose : mapped_optical_frame_transforms_) {
     positions->push_back(pose.getPosition().cast<double>());
     orientations->push_back(pose.getEigenQuaternion().cast<double>());
   }
@@ -270,7 +270,7 @@ bool TsdfServer::getUpdatedSensorPoses(
 }
 
 bool TsdfServer::resetMapUpdateStatus() {
-  updated_sensor_poses_.clear();
+  mapped_optical_frame_transforms_.clear();
   updated_map_min_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
   updated_map_max_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
   // Don't reset total map min/max.
@@ -421,8 +421,8 @@ void TsdfServer::processPointCloudMessageAndInsert(
   // Callback for inheriting classes.
   newPoseCallback(T_G_C);
 
-  // Insert this sensor pose into the updated sensor poses.
-  updated_sensor_poses_.push_back(T_G_C);
+  // Insert this sensor pose into the mapped optical frame transforms.
+  mapped_optical_frame_transforms_.push_back(T_G_C);
 
   // Update the bounding box of the updated and total map regions.
   BlockIndexList updated_blocks;
@@ -613,11 +613,11 @@ void TsdfServer::publishMap(bool reset_remote_map) {
       layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
     }
 
-    // Send updated sensor poses.
-    for (auto& pose : updated_sensor_poses_) {
-      geometry_msgs::Pose pose_msg;
-      tf::poseKindrToMsg(pose.cast<double>(), &pose_msg);
-      layer_msg.sensor_poses.push_back(pose_msg);
+    // Send mapped optical frame transforms.
+    for (auto& transform : mapped_optical_frame_transforms_) {
+      geometry_msgs::Transform transform_msg;
+      tf::transformKindrToMsg(transform.cast<double>(), &transform_msg);
+      layer_msg.optical_frame_transforms.push_back(transform_msg);
     }
 
     this->tsdf_map_pub_.publish(layer_msg);
@@ -630,8 +630,8 @@ void TsdfServer::publishMap(bool reset_remote_map) {
       layer->getBlockPtrByIndex(index)->updated().reset(Update::kMap);
     }
 
-    // Clear the updated sensor poses if we have published the map.
-    updated_sensor_poses_.clear();
+    // Clear the mapped optical frame transforms if we have published the map.
+    mapped_optical_frame_transforms_.clear();
 
     // Mark tsdf as not updated. It will be updated again when new data comes
     // in.
@@ -802,7 +802,7 @@ void TsdfServer::publishMapEvent(const ros::TimerEvent& /*event*/) {
 void TsdfServer::clear() {
   is_tsdf_updated_ = true;
 
-  updated_sensor_poses_.clear();
+  mapped_optical_frame_transforms_.clear();
 
   FloatingPoint nan = std::numeric_limits<FloatingPoint>::quiet_NaN();
   updated_map_min_.fill(nan);
@@ -826,11 +826,11 @@ void TsdfServer::tsdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
   bool success =
       deserializeMsgToLayer<TsdfVoxel>(layer_msg, tsdf_map_->getTsdfLayerPtr());
 
-  // Update the updated sensor poses.
-  for (const geometry_msgs::Pose& pose_msg : layer_msg.sensor_poses) {
-    kindr::minimal::QuatTransformation pose;
-    tf::poseMsgToKindr(pose_msg, &pose);
-    updated_sensor_poses_.push_back(pose.cast<FloatingPoint>());
+  // Update the mapped optical frame transforms.
+  for (const geometry_msgs::Transform& transform_msg : layer_msg.optical_frame_transforms) {
+    kindr::minimal::QuatTransformation transform;
+    tf::transformMsgToKindr(transform_msg, &transform);
+    mapped_optical_frame_transforms_.push_back(transform.cast<FloatingPoint>());
   }
 
   // Update the bounding box of the map.

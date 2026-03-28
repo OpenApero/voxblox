@@ -178,11 +178,11 @@ void EsdfServer::publishMap(bool reset_remote_map) {
         layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
       }
 
-      // Send updated sensor poses.
-      for (auto& pose : updated_sensor_poses_) {
-        geometry_msgs::Pose pose_msg;
-        tf::poseKindrToMsg(pose.cast<double>(), &pose_msg);
-        layer_msg.sensor_poses.push_back(pose_msg);
+      // Send mapped optical frame transforms.
+      for (auto& transform : mapped_optical_frame_transforms_) {
+        geometry_msgs::Transform transform_msg;
+        tf::transformKindrToMsg(transform.cast<double>(), &transform_msg);
+        layer_msg.optical_frame_transforms.push_back(transform_msg);
       }
 
       this->esdf_map_pub_.publish(layer_msg);
@@ -223,11 +223,11 @@ void EsdfServer::publishMap(bool reset_remote_map) {
         layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
       }
 
-      // Send updated sensor poses.
-      for (auto& pose : updated_sensor_poses_) {
-        geometry_msgs::Pose pose_msg;
-        tf::poseKindrToMsg(pose.cast<double>(), &pose_msg);
-        layer_msg.sensor_poses.push_back(pose_msg);
+      // Send mapped optical frame transforms.
+      for (auto& transform : mapped_optical_frame_transforms_) {
+        geometry_msgs::Transform transform_msg;
+        tf::transformKindrToMsg(transform.cast<double>(), &transform_msg);
+        layer_msg.optical_frame_transforms.push_back(transform_msg);
       }
 
       this->tsdf_map_pub_.publish(layer_msg);
@@ -244,8 +244,8 @@ void EsdfServer::publishMap(bool reset_remote_map) {
     num_subscribers_tsdf_map_ = subscribers;
   }
 
-  // Clear the updated sensor poses if we have published the map.
-  updated_sensor_poses_.clear();
+  // Clear the mapped optical frame transforms if we have published the map.
+  mapped_optical_frame_transforms_.clear();
 }
 
 bool EsdfServer::saveMap(const std::string& file_path) {
@@ -315,11 +315,11 @@ void EsdfServer::esdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
   bool success =
       deserializeMsgToLayer<EsdfVoxel>(layer_msg, esdf_map_->getEsdfLayerPtr());
 
-  // Update the updated sensor poses.
-  for (const geometry_msgs::Pose& pose_msg : layer_msg.sensor_poses) {
-    kindr::minimal::QuatTransformation pose;
-    tf::poseMsgToKindr(pose_msg, &pose);
-    updated_sensor_poses_.push_back(pose.cast<FloatingPoint>());
+  // Update the mapped optical frame transforms.
+  for (const geometry_msgs::Transform& transform_msg : layer_msg.optical_frame_transforms) {
+    kindr::minimal::QuatTransformation transform;
+    tf::transformMsgToKindr(transform_msg, &transform);
+    mapped_optical_frame_transforms_.push_back(transform.cast<FloatingPoint>());
   }
 
   // Update the bounding box of the map.

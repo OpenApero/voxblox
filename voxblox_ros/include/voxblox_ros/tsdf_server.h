@@ -58,8 +58,9 @@ class TsdfServer {
                            Eigen::Vector3d* updated_map_max);
   bool getTotalMapRegion(Eigen::Vector3d* total_map_min,
                          Eigen::Vector3d* total_map_max);
-  bool getUpdatedSensorPoses(std::vector<Eigen::Vector3d>* positions,
-                             std::vector<Eigen::Quaterniond>* orientations);
+  bool getMappedOpticalFrameTransforms(
+      std::vector<Eigen::Vector3d>* positions,
+      std::vector<Eigen::Quaterniond>* orientations);
   bool resetMapUpdateStatus();
 
   void insertSyncPointcloud(
@@ -293,7 +294,7 @@ class TsdfServer {
   bool is_tsdf_updated_;
 
   // Map update status
-  std::vector<Transformation> updated_sensor_poses_;
+  std::vector<Transformation> mapped_optical_frame_transforms_;
   Point updated_map_min_;
   Point updated_map_max_;
   Point total_map_min_;
