@@ -35,10 +35,10 @@ void VoxbloxMeshDisplay::processMessage(
     return;
   }
 
-  // if (visual_ == nullptr) {
-  visual_.reset(
-      new VoxbloxMeshVisual(context_->getSceneManager(), scene_node_));
-  // }
+  if (visual_ == nullptr) {
+    visual_.reset(
+        new VoxbloxMeshVisual(context_->getSceneManager(), scene_node_));
+  }
 
   // Now set or update the contents of the chosen visual.
   visual_->setMessage(msg);

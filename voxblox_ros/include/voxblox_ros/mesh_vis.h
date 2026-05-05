@@ -158,9 +158,7 @@ inline void generateVoxbloxMeshMsg(MeshLayer* mesh_layer, ColorMode color_mode,
   mesh_msg->header.stamp = ros::Time::now();
 
   BlockIndexList mesh_indices;
-  // I have to publish all meshes, because I have to always clear the mesh
-  mesh_layer->getAllAllocatedMeshes(&mesh_indices);
-  // mesh_layer->getAllUpdatedMeshes(&mesh_indices);
+  mesh_layer->getAllUpdatedMeshes(&mesh_indices);
 
   mesh_msg->block_edge_length = mesh_layer->block_size();
   mesh_msg->mesh_blocks.reserve(mesh_indices.size());

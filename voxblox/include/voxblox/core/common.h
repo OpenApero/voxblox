@@ -63,8 +63,6 @@ typedef LongIndexVector GlobalIndexVector;
 
 struct Color;
 
-typedef Eigen::ArrayXf ProbabilityArray;
-
 // Pointcloud types for external interface.
 typedef AlignedVector<Point> Pointcloud;
 typedef AlignedVector<Color> Colors;
