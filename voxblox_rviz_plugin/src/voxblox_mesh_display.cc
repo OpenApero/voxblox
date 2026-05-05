@@ -10,15 +10,39 @@
 
 namespace voxblox_rviz_plugin {
 
-VoxbloxMeshDisplay::VoxbloxMeshDisplay() {}
+VoxbloxMeshDisplay::VoxbloxMeshDisplay() : reset_requested_(false) {}
 
-void VoxbloxMeshDisplay::onInitialize() { MFDClass::onInitialize(); }
+void VoxbloxMeshDisplay::onInitialize() {
+  MFDClass::onInitialize();
+
+  reset_service_ = nh_.advertiseService(
+      "voxblox_mesh_display/reset",
+      &VoxbloxMeshDisplay::resetServiceCallback, this);
+}
 
 VoxbloxMeshDisplay::~VoxbloxMeshDisplay() {}
 
 void VoxbloxMeshDisplay::reset() {
   MFDClass::reset();
+  reset_requested_.store(false);
   visual_.reset();
+}
+
+void VoxbloxMeshDisplay::update(float wall_dt, float ros_dt) {
+  MFDClass::update(wall_dt, ros_dt);
+
+  if (reset_requested_.exchange(false)) {
+    visual_.reset();
+  }
+}
+
+bool VoxbloxMeshDisplay::resetServiceCallback(
+    std_srvs::Trigger::Request& /*request*/,
+    std_srvs::Trigger::Response& response) {
+  reset_requested_.store(true);
+  response.success = true;
+  response.message = "Voxblox mesh display reset requested.";
+  return true;
 }
 
 void VoxbloxMeshDisplay::processMessage(
