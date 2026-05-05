@@ -72,8 +72,6 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
       boost::bind(&TsdfServer::insertSyncPointcloud, this, _1, _2));
 
   mesh_pub_ = nh_private_.advertise<voxblox_msgs::Mesh>("mesh", 1, true);
-  mesh_pcl_mesh_pub_ =
-      nh_private_.advertise<pcl_msgs::PolygonMesh>("mesh_pcl", 1, true);
 
   // Publishing/subscribing to a layer from another node (when using this as
   // a library, for example within a planner).
@@ -674,16 +672,6 @@ void TsdfServer::updateMesh() {
     if (cache_mesh_) {
       cached_mesh_msg_ = mesh_msg;
     }
-  }
-
-  // Output as pcl mesh.
-  if (mesh_pcl_mesh_pub_.getNumSubscribers() > 0) {
-    pcl::PolygonMesh polygon_mesh;
-    toConnectedPCLPolygonMesh(*mesh_layer_, world_frame_, &polygon_mesh);
-    pcl_msgs::PolygonMesh pcl_mesh_msg;
-    pcl_conversions::fromPCL(polygon_mesh, pcl_mesh_msg);
-    pcl_mesh_msg.header.stamp = ros::Time::now();
-    mesh_pcl_mesh_pub_.publish(pcl_mesh_msg);
   }
 
   publish_mesh_timer.Stop();
