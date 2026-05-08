@@ -118,6 +118,14 @@ class TsdfServer {
 
   std::shared_ptr<TsdfMap> getTsdfMapPtr() { return tsdf_map_; }
   std::shared_ptr<const TsdfMap> getTsdfMapPtr() const { return tsdf_map_; }
+  std::shared_ptr<MeshLayer> getMeshLayerPtr() { return mesh_layer_; }
+  std::shared_ptr<const MeshLayer> getMeshLayerPtr() const { return mesh_layer_; }
+  MeshIntegrator<TsdfVoxel>* getMeshIntegratorPtr() {
+    return mesh_integrator_.get();
+  }
+  const MeshIntegrator<TsdfVoxel>* getMeshIntegratorPtr() const {
+    return mesh_integrator_.get();
+  }
 
   /// Accessors for setting and getting parameters.
   double getSliceLevel() const { return slice_level_; }
