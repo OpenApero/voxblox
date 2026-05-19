@@ -158,13 +158,6 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
         nh_private_.createTimer(ros::Duration(publish_map_every_n_sec),
                                 &TsdfServer::publishMapEvent, this);
   }
-
-  // Initialize the map update status
-  FloatingPoint nan = std::numeric_limits<FloatingPoint>::quiet_NaN();
-  updated_map_min_.fill(nan);
-  updated_map_max_.fill(nan);
-  total_map_min_.fill(nan);
-  total_map_max_.fill(nan);
 }
 
 void TsdfServer::getServerConfigFromRosParam(
@@ -229,25 +222,59 @@ void TsdfServer::getServerConfigFromRosParam(
   color_map_->setMaxValue(intensity_max_value);
 }
 
+// Folds one block's world-space corners into a running (min, max) pair.
+// Called from the two on-demand bbox computations below.
+static void mergeBlockBounds(const Block<TsdfVoxel>& block, Point* lo,
+                             Point* hi) {
+  const int vps = block.voxels_per_side();
+  const Point a = block.computeCoordinatesFromVoxelIndex({0, 0, 0});
+  const Point b = block.computeCoordinatesFromVoxelIndex(
+      {vps - 1, vps - 1, vps - 1});
+  *lo = lo->cwiseMin(a).cwiseMin(b);
+  *hi = hi->cwiseMax(a).cwiseMax(b);
+}
+
+// Bounding box of blocks touched since the last resetMapUpdateStatus().
+// Computed on demand from the per-block Update::kBbox flag; no cached state.
 bool TsdfServer::getUpdatedMapRegion(Eigen::Vector3d* updated_map_min,
                                      Eigen::Vector3d* updated_map_max) {
-  if (std::isnan(updated_map_min_.x())) {
+  auto layer = tsdf_map_->getTsdfLayerPtr();
+  BlockIndexList blocks;
+  layer->getAllUpdatedBlocks(Update::kBbox, &blocks);
+  if (blocks.empty()) {
     return false;
   }
 
-  *updated_map_min = updated_map_min_.cast<double>();
-  *updated_map_max = updated_map_max_.cast<double>();
+  const FloatingPoint inf = std::numeric_limits<FloatingPoint>::infinity();
+  Point lo = Point::Constant(inf);
+  Point hi = Point::Constant(-inf);
+  for (const BlockIndex& idx : blocks) {
+    mergeBlockBounds(layer->getBlockByIndex(idx), &lo, &hi);
+  }
+  *updated_map_min = lo.cast<double>();
+  *updated_map_max = hi.cast<double>();
   return true;
 }
 
+// Bounding box of every currently-allocated block. Computed on demand so it
+// correctly reflects removeDistantBlocks() and clear() without bookkeeping.
 bool TsdfServer::getTotalMapRegion(Eigen::Vector3d* total_map_min,
                                    Eigen::Vector3d* total_map_max) {
-  if (std::isnan(total_map_min_.x())) {
+  auto layer = tsdf_map_->getTsdfLayerPtr();
+  BlockIndexList blocks;
+  layer->getAllAllocatedBlocks(&blocks);
+  if (blocks.empty()) {
     return false;
   }
 
-  *total_map_min = total_map_min_.cast<double>();
-  *total_map_max = total_map_max_.cast<double>();
+  const FloatingPoint inf = std::numeric_limits<FloatingPoint>::infinity();
+  Point lo = Point::Constant(inf);
+  Point hi = Point::Constant(-inf);
+  for (const BlockIndex& idx : blocks) {
+    mergeBlockBounds(layer->getBlockByIndex(idx), &lo, &hi);
+  }
+  *total_map_min = lo.cast<double>();
+  *total_map_max = hi.cast<double>();
   return true;
 }
 
@@ -269,43 +296,13 @@ bool TsdfServer::getMappedOpticalFrameTransforms(
 
 bool TsdfServer::resetMapUpdateStatus() {
   mapped_optical_frame_transforms_.clear();
-  updated_map_min_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
-  updated_map_max_.fill(std::numeric_limits<FloatingPoint>::quiet_NaN());
-  // Don't reset total map min/max.
+  auto layer = tsdf_map_->getTsdfLayerPtr();
+  BlockIndexList blocks;
+  layer->getAllUpdatedBlocks(Update::kBbox, &blocks);
+  for (const BlockIndex& idx : blocks) {
+    layer->getBlockPtrByIndex(idx)->updated().reset(Update::kBbox);
+  }
   return true;
-}
-
-void TsdfServer::expandMapRegionByBlock(const BlockIndex& block_index) {
-  const auto& block =
-      tsdf_map_->getTsdfLayerPtr()->getBlockByIndex(block_index);
-  const int vps = block.voxels_per_side();
-
-  const voxblox::VoxelIndex min_corner(0, 0, 0);
-  const voxblox::VoxelIndex max_corner(vps - 1, vps - 1, vps - 1);
-
-  const voxblox::Point voxel_min =
-      block.computeCoordinatesFromVoxelIndex(min_corner);
-  const voxblox::Point voxel_max =
-      block.computeCoordinatesFromVoxelIndex(max_corner);
-
-  const voxblox::Point block_min = voxel_min.cwiseMin(voxel_max);
-  const voxblox::Point block_max = voxel_min.cwiseMax(voxel_max);
-
-  if (!std::isnan(updated_map_min_.x())) {
-    updated_map_min_ = updated_map_min_.cwiseMin(block_min);
-    updated_map_max_ = updated_map_max_.cwiseMax(block_max);
-  } else {
-    updated_map_min_ = block_min;
-    updated_map_max_ = block_max;
-  }
-
-  if (!std::isnan(total_map_min_.x())) {
-    total_map_min_ = total_map_min_.cwiseMin(block_min);
-    total_map_max_ = total_map_max_.cwiseMax(block_max);
-  } else {
-    total_map_min_ = block_min;
-    total_map_max_ = block_max;
-  }
 }
 
 void TsdfServer::processPointCloudMessageAndInsert(
@@ -421,14 +418,6 @@ void TsdfServer::processPointCloudMessageAndInsert(
 
   // Insert this sensor pose into the mapped optical frame transforms.
   mapped_optical_frame_transforms_.push_back(T_G_C);
-
-  // Update the bounding box of the updated and total map regions.
-  BlockIndexList updated_blocks;
-  tsdf_map_->getTsdfLayerPtr()->getAllUpdatedBlocks(Update::kMap,
-                                                    &updated_blocks);
-  for (const BlockIndex& index : updated_blocks) {
-    expandMapRegionByBlock(index);
-  }
 }
 
 // Checks if we can get the next message from queue.
@@ -792,12 +781,6 @@ void TsdfServer::clear() {
 
   mapped_optical_frame_transforms_.clear();
 
-  FloatingPoint nan = std::numeric_limits<FloatingPoint>::quiet_NaN();
-  updated_map_min_.fill(nan);
-  updated_map_max_.fill(nan);
-  total_map_min_.fill(nan);
-  total_map_max_.fill(nan);
-
   tsdf_map_->getTsdfLayerPtr()->removeAllBlocks();
   mesh_layer_->clear();
 
@@ -811,20 +794,25 @@ void TsdfServer::clear() {
 void TsdfServer::tsdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
   timing::Timer receive_map_timer("map/receive_tsdf");
 
-  bool success =
-      deserializeMsgToLayer<TsdfVoxel>(layer_msg, tsdf_map_->getTsdfLayerPtr());
+  auto tsdf_layer = tsdf_map_->getTsdfLayerPtr();
+  bool success = deserializeMsgToLayer<TsdfVoxel>(layer_msg, tsdf_layer);
+
+  // ACTION_UPDATE/RESET deserialization writes voxel data only and leaves the
+  // per-block updated bitset untouched. Mark each received block dirty for
+  // every consumer so mesh, ESDF, bbox, and incremental publishing all see
+  // it — mirroring what local integrators do via updated().set().
+  for (const voxblox_msgs::Block& block_msg : layer_msg.blocks) {
+    BlockIndex idx(block_msg.x_index, block_msg.y_index, block_msg.z_index);
+    if (auto block = tsdf_layer->getBlockPtrByIndex(idx)) {
+      block->updated().set();
+    }
+  }
 
   // Update the mapped optical frame transforms.
   for (const geometry_msgs::Transform& transform_msg : layer_msg.optical_frame_transforms) {
     kindr::minimal::QuatTransformation transform;
     tf::transformMsgToKindr(transform_msg, &transform);
     mapped_optical_frame_transforms_.push_back(transform.cast<FloatingPoint>());
-  }
-
-  // Update the bounding box of the map.
-  for (const voxblox_msgs::Block& block_msg : layer_msg.blocks) {
-    BlockIndex index(block_msg.x_index, block_msg.y_index, block_msg.z_index);
-    expandMapRegionByBlock(index);
   }
 
   if (!success) {

@@ -148,9 +148,6 @@ class TsdfServer {
   void tsdfMapCallback(const voxblox_msgs::Layer& layer_msg);
 
  protected:
-  /// Expands the updated and total map bounding boxes to include the block.
-  void expandMapRegionByBlock(const BlockIndex& block_index);
-
   /**
    * Gets the next pointcloud that has an available transform to process from
    * the queue.
@@ -302,10 +299,6 @@ class TsdfServer {
 
   // Map update status
   std::vector<Transformation> mapped_optical_frame_transforms_;
-  Point updated_map_min_;
-  Point updated_map_max_;
-  Point total_map_min_;
-  Point total_map_max_;
 };
 
 }  // namespace voxblox

@@ -312,51 +312,25 @@ void EsdfServer::newPoseCallback(const Transformation& T_G_C) {
 void EsdfServer::esdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
   timing::Timer receive_map_timer("map/receive_esdf");
 
-  bool success =
-      deserializeMsgToLayer<EsdfVoxel>(layer_msg, esdf_map_->getEsdfLayerPtr());
+  auto esdf_layer = esdf_map_->getEsdfLayerPtr();
+  bool success = deserializeMsgToLayer<EsdfVoxel>(layer_msg, esdf_layer);
+
+  // ACTION_UPDATE/RESET deserialization writes voxel data only and leaves the
+  // per-block updated bitset untouched. Mark each received block dirty for
+  // every consumer so downstream publishing and bbox tracking treat received
+  // blocks the same as locally-integrated ones.
+  for (const voxblox_msgs::Block& block_msg : layer_msg.blocks) {
+    BlockIndex idx(block_msg.x_index, block_msg.y_index, block_msg.z_index);
+    if (auto block = esdf_layer->getBlockPtrByIndex(idx)) {
+      block->updated().set();
+    }
+  }
 
   // Update the mapped optical frame transforms.
   for (const geometry_msgs::Transform& transform_msg : layer_msg.optical_frame_transforms) {
     kindr::minimal::QuatTransformation transform;
     tf::transformMsgToKindr(transform_msg, &transform);
     mapped_optical_frame_transforms_.push_back(transform.cast<FloatingPoint>());
-  }
-
-  // Update the bounding box of the map.
-  for (const voxblox_msgs::Block& block_msg : layer_msg.blocks) {
-    BlockIndex index(block_msg.x_index, block_msg.y_index, block_msg.z_index);
-    const auto& block = esdf_map_->getEsdfLayerPtr()->getBlockByIndex(index);
-    const int vps = block.voxels_per_side();
-
-    const voxblox::VoxelIndex min_corner(0, 0, 0);
-    const voxblox::VoxelIndex max_corner(vps - 1, vps - 1, vps - 1);
-
-    const voxblox::Point voxel_min =
-        block.computeCoordinatesFromVoxelIndex(min_corner);
-    const voxblox::Point voxel_max =
-        block.computeCoordinatesFromVoxelIndex(max_corner);
-
-    const voxblox::Point block_min = voxel_min.cwiseMin(voxel_max);
-    const voxblox::Point block_max = voxel_min.cwiseMax(voxel_max);
-
-    if (!std::isnan(updated_map_min_.x())) {
-      updated_map_min_ = updated_map_min_.cwiseMin(block_min);
-      updated_map_max_ = updated_map_max_.cwiseMax(block_max);
-    } else {
-      updated_map_min_ = block_min;
-      updated_map_max_ = block_max;
-    }
-  }
-
-  // If the updated map is not nan, update the total map.
-  if (!std::isnan(updated_map_min_.x())) {
-    if (!std::isnan(total_map_min_.x())) {
-      total_map_min_ = total_map_min_.cwiseMin(updated_map_min_);
-      total_map_max_ = total_map_max_.cwiseMax(updated_map_max_);
-    } else {
-      total_map_min_ = updated_map_min_;
-      total_map_max_ = updated_map_max_;
-    }
   }
 
   if (!success) {
