@@ -63,9 +63,14 @@ class TsdfServer {
       std::vector<Eigen::Quaterniond>* orientations);
   bool resetMapUpdateStatus();
 
+  // weight_scaling_factor scales the measurement weight for this insertion
+  // only. Use a small value (e.g. 0.01) to integrate low-confidence points
+  // that a single real measurement can easily overwrite. The factor is passed
+  // down the integration call stack, so concurrent insertions do not share it.
   void insertSyncPointcloud(
       const sensor_msgs::PointCloud2::ConstPtr& pointcloud_msg_in,
-      const geometry_msgs::TransformStamped::ConstPtr& transform_msg);
+      const geometry_msgs::TransformStamped::ConstPtr& transform_msg,
+      const float weight_scaling_factor = 1.0f);
 
   void insertPointcloud(const sensor_msgs::PointCloud2::Ptr& pointcloud);
 
@@ -74,11 +79,13 @@ class TsdfServer {
 
   virtual void processPointCloudMessageAndInsert(
       const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
-      const Transformation& T_G_C, const bool is_freespace_pointcloud);
+      const Transformation& T_G_C, const bool is_freespace_pointcloud,
+      const float weight_scaling_factor = 1.0f);
 
   void integratePointcloud(const Transformation& T_G_C,
                            const Pointcloud& ptcloud_C, const Colors& colors,
-                           const bool is_freespace_pointcloud = false);
+                           const bool is_freespace_pointcloud = false,
+                           const float weight_scaling_factor = 1.0f);
   virtual void newPoseCallback(const Transformation& /*new_pose*/) {
     // Do nothing.
   }

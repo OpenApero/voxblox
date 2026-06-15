@@ -1,5 +1,7 @@
 #include "voxblox_ros/tsdf_server.h"
 
+#include <cmath>
+
 #include <minkindr_conversions/kindr_msg.h>
 #include <minkindr_conversions/kindr_tf.h>
 
@@ -68,8 +70,10 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
                                        sync_queue_size_);
   sync_ = std::make_shared<PointCloudTransformSync>(
       sync_point_cloud_sub_, sync_camera_transform_sub_, sync_queue_size_);
+  // Bind the weight scaling explicitly (boost::bind does not apply default
+  // arguments); real synchronized scans integrate at full weight.
   sync_->registerCallback(
-      boost::bind(&TsdfServer::insertSyncPointcloud, this, _1, _2));
+      boost::bind(&TsdfServer::insertSyncPointcloud, this, _1, _2, 1.0f));
 
   mesh_pub_ = nh_private_.advertise<voxblox_msgs::Mesh>("mesh", 1, true);
 
@@ -234,6 +238,10 @@ static void mergeBlockBounds(const Block<TsdfVoxel>& block, Point* lo,
   *hi = hi->cwiseMax(a).cwiseMax(b);
 }
 
+static bool isValidWeightScalingFactor(const float weight_scaling_factor) {
+  return std::isfinite(weight_scaling_factor) && weight_scaling_factor > 0.0f;
+}
+
 // Bounding box of blocks touched since the last resetMapUpdateStatus().
 // Computed on demand from the per-block Update::kBbox flag; no cached state.
 bool TsdfServer::getUpdatedMapRegion(Eigen::Vector3d* updated_map_min,
@@ -307,7 +315,8 @@ bool TsdfServer::resetMapUpdateStatus() {
 
 void TsdfServer::processPointCloudMessageAndInsert(
     const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
-    const Transformation& T_G_C, const bool is_freespace_pointcloud) {
+    const Transformation& T_G_C, const bool is_freespace_pointcloud,
+    const float weight_scaling_factor) {
   // Convert the PCL pointcloud into our awesome format.
 
   // Horrible hack fix to fix color parsing colors in PCL.
@@ -398,7 +407,8 @@ void TsdfServer::processPointCloudMessageAndInsert(
   }
 
   ros::WallTime start = ros::WallTime::now();
-  integratePointcloud(T_G_C_refined, points_C, colors, is_freespace_pointcloud);
+  integratePointcloud(T_G_C_refined, points_C, colors, is_freespace_pointcloud,
+                      weight_scaling_factor);
   ros::WallTime end = ros::WallTime::now();
   if (verbose_) {
     ROS_INFO("Finished integrating in %f seconds, have %lu blocks.",
@@ -450,7 +460,15 @@ bool TsdfServer::getNextPointcloudFromQueue(
 
 void TsdfServer::insertSyncPointcloud(
     const sensor_msgs::PointCloud2::ConstPtr& pointcloud_msg_in,
-    const geometry_msgs::TransformStamped::ConstPtr& transform_msg) {
+    const geometry_msgs::TransformStamped::ConstPtr& transform_msg,
+    const float weight_scaling_factor) {
+  if (!isValidWeightScalingFactor(weight_scaling_factor)) {
+    ROS_ERROR_STREAM("Invalid TSDF weight_scaling_factor: "
+                     << weight_scaling_factor
+                     << ". Expected a finite value greater than 0.");
+    return;
+  }
+
   Transformation T_G_C;
   tf::transformMsgToKindr(transform_msg->transform, &T_G_C);
 
@@ -459,7 +477,8 @@ void TsdfServer::insertSyncPointcloud(
 
   constexpr bool is_freespace_pointcloud = false;
   processPointCloudMessageAndInsert(pointcloud_msg, T_G_C,
-                                    is_freespace_pointcloud);
+                                    is_freespace_pointcloud,
+                                    weight_scaling_factor);
 
   is_tsdf_updated_ = true;
 
@@ -532,10 +551,18 @@ void TsdfServer::insertFreespacePointcloud(
 void TsdfServer::integratePointcloud(const Transformation& T_G_C,
                                      const Pointcloud& ptcloud_C,
                                      const Colors& colors,
-                                     const bool is_freespace_pointcloud) {
+                                     const bool is_freespace_pointcloud,
+                                     const float weight_scaling_factor) {
   CHECK_EQ(ptcloud_C.size(), colors.size());
+  if (!isValidWeightScalingFactor(weight_scaling_factor)) {
+    ROS_ERROR_STREAM("Invalid TSDF weight_scaling_factor: "
+                     << weight_scaling_factor
+                     << ". Expected a finite value greater than 0.");
+    return;
+  }
   tsdf_integrator_->integratePointCloud(T_G_C, ptcloud_C, colors,
-                                        is_freespace_pointcloud);
+                                        is_freespace_pointcloud,
+                                        weight_scaling_factor);
 }
 
 void TsdfServer::publishAllUpdatedTsdfVoxels() {
