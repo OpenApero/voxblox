@@ -17,7 +17,10 @@ namespace Update {
 /// kBbox is consumed by TsdfServer's updated-region accessor; it is cleared
 /// when the caller fetches/resets the region, so the bbox reflects only
 /// blocks touched since the last reset.
-enum Status { kMap, kMesh, kEsdf, kBbox, kCount };
+/// kCache is reserved for derived state kept outside voxblox: a consumer that
+/// maintains an incremental summary of a layer clears the bit on the blocks it
+/// processes, so each block is revisited only after it changes again.
+enum Status { kMap, kMesh, kEsdf, kBbox, kCache, kCount };
 }  // namespace Update
 
 /** An n x n x n container holding VoxelType. It is aware of its 3D position and
