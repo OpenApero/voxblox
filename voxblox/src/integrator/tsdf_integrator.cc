@@ -5,6 +5,11 @@
 
 namespace voxblox {
 
+namespace {
+/// Pointclouds to integrate before warning that clearing never fired.
+constexpr size_t kClearingWarningPointclouds = 100u;
+}  // namespace
+
 TsdfIntegratorBase::Ptr TsdfIntegratorFactory::create(
     const std::string& integrator_type_name,
     const TsdfIntegratorBase::Config& config, Layer<TsdfVoxel>* layer) {
@@ -52,7 +57,10 @@ TsdfIntegratorBase::Ptr TsdfIntegratorFactory::create(
 
 TsdfIntegratorBase::TsdfIntegratorBase(const Config& config,
                                        Layer<TsdfVoxel>* layer)
-    : config_(config) {
+    : config_(config),
+      num_integrated_pointclouds_(0u),
+      num_clearing_points_(0u),
+      clearing_warning_issued_(false) {
   setLayer(layer);
 
   if (config_.integrator_threads == 0) {
@@ -228,6 +236,37 @@ float TsdfIntegratorBase::computeDistance(const Point& origin,
 }
 
 // Thread safe.
+FloatingPoint TsdfIntegratorBase::clearingRayLengthLimit(
+    const Point& point_C) const {
+  if (config_.observation_boundary != ObservationBoundary::kPlanar) {
+    return config_.max_ray_length_m;
+  }
+  // Clearing points have z > max_ray_length_m > 0 by classification; the guard
+  // only keeps a malformed point from scaling the cap.
+  if (point_C.z() <= kEpsilon) {
+    return config_.max_ray_length_m;
+  }
+  return config_.max_ray_length_m * point_C.norm() / point_C.z();
+}
+
+// Thread safe.
+void TsdfIntegratorBase::noteIntegratedPointcloud() const {
+  const size_t num_pointclouds =
+      num_integrated_pointclouds_.fetch_add(1u, std::memory_order_relaxed) + 1u;
+  if (!config_.allow_clear || num_pointclouds < kClearingWarningPointclouds ||
+      num_clearing_points_.load(std::memory_order_relaxed) > 0u ||
+      clearing_warning_issued_.exchange(true)) {
+    return;
+  }
+  LOG(WARNING) << "allow_clear is enabled but no clearing point arrived in the "
+                  "first "
+               << kClearingWarningPointclouds
+               << " pointclouds -- check that far-depth sentinels exceed "
+                  "max_ray_length_m ("
+               << config_.max_ray_length_m << ").";
+}
+
+// Thread safe.
 float TsdfIntegratorBase::getVoxelWeight(
     const Point& point_C, const float weight_scaling_factor) const {
   float weight = 0.0f;
@@ -249,6 +288,7 @@ void SimpleTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
                                                const float weight_scaling_factor) {
   timing::Timer integrate_timer("integrate/simple");
   CHECK_EQ(points_C.size(), colors.size());
+  noteIntegratedPointcloud();
 
   std::unique_ptr<ThreadSafeIndex> index_getter(
       ThreadSafeIndexFactory::get(config_.integration_order_mode, points_C));
@@ -293,7 +333,7 @@ void SimpleTsdfIntegrator::integrateFunction(const Transformation& T_G_C,
 
     RayCaster ray_caster(origin, point_G, is_clearing,
                          config_.voxel_carving_enabled,
-                         config_.max_ray_length_m, voxel_size_inv_,
+                         clearingRayLengthLimit(point_C), voxel_size_inv_,
                          config_.default_truncation_distance);
 
     Block<TsdfVoxel>::Ptr block = nullptr;
@@ -317,6 +357,7 @@ void MergedTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
                                                const float weight_scaling_factor) {
   timing::Timer integrate_timer("integrate/merged");
   CHECK_EQ(points_C.size(), colors.size());
+  noteIntegratedPointcloud();
 
   // Pre-compute a list of unique voxels to end on.
   // Create a hashmap: VOXEL INDEX -> index in original cloud.
@@ -415,8 +456,9 @@ void MergedTsdfIntegrator::integrateVoxel(
   const Point merged_point_G = T_G_C * merged_point_C;
 
   RayCaster ray_caster(origin, merged_point_G, clearing_ray,
-                       config_.voxel_carving_enabled, config_.max_ray_length_m,
-                       voxel_size_inv_, config_.default_truncation_distance);
+                       config_.voxel_carving_enabled,
+                       clearingRayLengthLimit(merged_point_C), voxel_size_inv_,
+                       config_.default_truncation_distance);
 
   GlobalIndex global_voxel_idx;
   while (ray_caster.nextRayIndex(&global_voxel_idx)) {
@@ -532,7 +574,7 @@ void FastTsdfIntegrator::integrateFunction(const Transformation& T_G_C,
     constexpr bool cast_from_origin = false;
     RayCaster ray_caster(origin, point_G, is_clearing,
                          config_.voxel_carving_enabled,
-                         config_.max_ray_length_m, voxel_size_inv_,
+                         clearingRayLengthLimit(point_C), voxel_size_inv_,
                          config_.default_truncation_distance, cast_from_origin);
 
     int64_t consecutive_ray_collisions = 0;
@@ -570,6 +612,7 @@ void FastTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
                                              const float weight_scaling_factor) {
   timing::Timer integrate_timer("integrate/fast");
   CHECK_EQ(points_C.size(), colors.size());
+  noteIntegratedPointcloud();
 
   integration_start_time_ = std::chrono::steady_clock::now();
 
@@ -614,6 +657,7 @@ std::string TsdfIntegratorBase::Config::print() const {
   ss << " - max_ray_length_m:                          " << max_ray_length_m << "\n";
   ss << " - use_const_weight:                          " << use_const_weight << "\n";
   ss << " - allow_clear:                               " << allow_clear << "\n";
+  ss << " - observation_boundary:                      " << kObservationBoundaryNames[static_cast<int>(observation_boundary) - 1] << "\n";
   ss << " - use_weight_dropoff:                        " << use_weight_dropoff << "\n";
   ss << " - use_sparsity_compensation_factor:          " << use_sparsity_compensation_factor << "\n";
   ss << " - sparsity_compensation_factor:              "  << sparsity_compensation_factor << "\n";

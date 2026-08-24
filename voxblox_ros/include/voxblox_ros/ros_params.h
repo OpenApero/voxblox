@@ -1,6 +1,8 @@
 #ifndef VOXBLOX_ROS_ROS_PARAMS_H_
 #define VOXBLOX_ROS_ROS_PARAMS_H_
 
+#include <string>
+
 #include <ros/node_handle.h>
 
 #include <voxblox/alignment/icp.h>
@@ -86,6 +88,21 @@ inline TsdfIntegratorBase::Config getTsdfIntegratorConfigFromRosParam(
                    integrator_config.use_weight_dropoff);
   nh_private.param("allow_clear", integrator_config.allow_clear,
                    integrator_config.allow_clear);
+
+  std::string observation_boundary = kObservationBoundaryNames[static_cast<int>(
+      integrator_config.observation_boundary) - 1];
+  nh_private.param("observation_boundary", observation_boundary,
+                   observation_boundary);
+  if (observation_boundary == "spherical") {
+    integrator_config.observation_boundary = ObservationBoundary::kSpherical;
+  } else if (observation_boundary == "planar") {
+    integrator_config.observation_boundary = ObservationBoundary::kPlanar;
+  } else {
+    ROS_ERROR_STREAM("Unknown observation_boundary: '"
+                     << observation_boundary
+                     << "', keeping the default value.");
+  }
+
   nh_private.param("start_voxel_subsampling_factor",
                    integrator_config.start_voxel_subsampling_factor,
                    integrator_config.start_voxel_subsampling_factor);

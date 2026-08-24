@@ -130,6 +130,11 @@ catkin_add_gtest(test_bucket_queue
 )
 target_link_libraries(test_bucket_queue ${PROJECT_NAME})
 
+catkin_add_gtest(test_observation_boundary
+  test/test_observation_boundary.cc
+)
+target_link_libraries(test_observation_boundary ${PROJECT_NAME})
+
 catkin_add_gtest(test_clear_spheres
   test/test_clear_spheres.cc
 )

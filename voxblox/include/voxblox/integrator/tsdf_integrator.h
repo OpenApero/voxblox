@@ -40,6 +40,19 @@ const std::array<std::string, kNumTsdfIntegratorTypes>
                                  /*kMerged*/ "merged",
                                  /*kFast*/ "fast"}};
 
+/// Surface that bounds the sensor's observation: a sphere around the sensor
+/// origin (lidar) or the plane at max range (depth camera).
+enum class ObservationBoundary : int {
+  kSpherical = 1,
+  kPlanar = 2,
+};
+
+static constexpr size_t kNumObservationBoundaries = 2u;
+
+const std::array<std::string, kNumObservationBoundaries>
+    kObservationBoundaryNames = {{/*kSpherical*/ "spherical",
+                                  /*kPlanar*/ "planar"}};
+
 /**
  * Base class to the simple, merged and fast TSDF integrators. The integrator
  * takes in a pointcloud + pose and uses this information to update the TSDF
@@ -61,6 +74,8 @@ class TsdfIntegratorBase {
     bool voxel_carving_enabled = true;
     FloatingPoint min_ray_length_m = 0.1;
     FloatingPoint max_ray_length_m = 5.0;
+    /// Surface the ray-length bounds describe; see isPointValid.
+    ObservationBoundary observation_boundary = ObservationBoundary::kSpherical;
     bool use_const_weight = false;
     bool allow_clear = true;
     bool use_weight_dropoff = true;
@@ -109,25 +124,57 @@ class TsdfIntegratorBase {
   void setLayer(Layer<TsdfVoxel>* layer);
 
  protected:
-  /// Thread safe.
+  /**
+   * Thread safe.
+   * Max range is measured as ||point_C|| for a spherical boundary (lidar) and
+   * as point_C.z() for a planar one (depth camera); the min bound stays on norm,
+   * so points behind the plane remain ordinary surface points. A beyond-range
+   * point only classifies the ray as clearing; how far it carves is set by
+   * clearingRayLengthLimit(), not by the point's own distance.
+   */
   inline bool isPointValid(const Point& point_C, const bool freespace_point,
                            bool* is_clearing) const {
     DCHECK(is_clearing != nullptr);
     const FloatingPoint ray_distance = point_C.norm();
     if (ray_distance < config_.min_ray_length_m) {
       return false;
-    } else if (ray_distance > config_.max_ray_length_m) {
+    }
+
+    const FloatingPoint boundary_distance =
+        (config_.observation_boundary == ObservationBoundary::kPlanar)
+            ? point_C.z()
+            : ray_distance;
+    if (boundary_distance > config_.max_ray_length_m) {
       if (config_.allow_clear || freespace_point) {
         *is_clearing = true;
+        num_clearing_points_.fetch_add(1u, std::memory_order_relaxed);
         return true;
       } else {
         return false;
       }
     } else {
       *is_clearing = freespace_point;
+      if (freespace_point) {
+        num_clearing_points_.fetch_add(1u, std::memory_order_relaxed);
+      }
       return true;
     }
   }
+
+  /**
+   * Cap on how far a clearing ray may carve, for the ray through point_C.
+   * Thread safe.
+   * Planar: the ray's intersection with the z = max_ray_length_m plane, so the
+   * carve stops at the observation boundary however far beyond it point_C lies.
+   * Spherical: max_ray_length_m. RayCaster subtracts the truncation distance.
+   */
+  FloatingPoint clearingRayLengthLimit(const Point& point_C) const;
+
+  /**
+   * Records one integrated pointcloud and warns once if allow_clear is enabled
+   * but no clearing point has ever arrived. Thread safe.
+   */
+  void noteIntegratedPointcloud() const;
 
   /**
    * Will return a pointer to a voxel located at global_voxel_idx in the tsdf
@@ -197,6 +244,11 @@ class TsdfIntegratorBase {
    * (num_threads / (2^n)). For 8 threads and 12 bits this gives 0.2%.
    */
   ApproxHashArray<12, std::mutex, GlobalIndex, LongIndexHash> mutexes_;
+
+  /// Tripwire state for the "clearing configured but never fired" warning.
+  mutable std::atomic<size_t> num_integrated_pointclouds_;
+  mutable std::atomic<size_t> num_clearing_points_;
+  mutable std::atomic<bool> clearing_warning_issued_;
 };
 
 /// Creates a TSDF integrator of the desired type.
