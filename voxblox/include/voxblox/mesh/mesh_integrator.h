@@ -24,6 +24,7 @@
 #define VOXBLOX_MESH_MESH_INTEGRATOR_H_
 
 #include <algorithm>
+#include <functional>
 #include <list>
 #include <memory>
 #include <string>
@@ -152,9 +153,11 @@ class MeshIntegrator {
 
     std::list<std::thread> integration_threads;
     for (size_t i = 0; i < config_.integrator_threads; ++i) {
+      // Reference-wrapped: the threads below are joined before the
+      // referenced block list goes out of scope, so no copy is needed.
       integration_threads.emplace_back(
-          &MeshIntegrator::generateMeshBlocksFunction, this, all_tsdf_blocks,
-          clear_updated_flag, index_getter.get());
+          &MeshIntegrator::generateMeshBlocksFunction, this,
+          std::cref(all_tsdf_blocks), clear_updated_flag, index_getter.get());
     }
 
     for (std::thread& thread : integration_threads) {

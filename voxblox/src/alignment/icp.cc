@@ -39,6 +39,7 @@
  */
 #include "voxblox/alignment/icp.h"
 
+#include <functional>
 #include <random>
 
 namespace voxblox {
@@ -245,7 +246,9 @@ size_t ICP::runICP(const Layer<TsdfVoxel>& tsdf_layer, const Pointcloud& points,
   size_t num_updates = 0;
 
   for (size_t i = 0; i < config_.num_threads; ++i) {
-    threads.emplace_back(&ICP::runThread, this, shuffled_points,
+    // Reference-wrapped: the threads below are joined before the referenced
+    // cloud goes out of scope, so no per-thread copy is needed.
+    threads.emplace_back(&ICP::runThread, this, std::cref(shuffled_points),
                          refined_T_tsdf_sensor, &base_info_vector,
                          &num_updates);
   }

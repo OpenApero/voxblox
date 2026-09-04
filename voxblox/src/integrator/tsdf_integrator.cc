@@ -1,5 +1,6 @@
 #include "voxblox/integrator/tsdf_integrator.h"
 
+#include <functional>
 #include <iostream>
 #include <list>
 
@@ -295,10 +296,12 @@ void SimpleTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
 
   std::list<std::thread> integration_threads;
   for (size_t i = 0; i < config_.integrator_threads; ++i) {
-    integration_threads.emplace_back(&SimpleTsdfIntegrator::integrateFunction,
-                                     this, T_G_C, points_C, colors,
-                                     freespace_points, weight_scaling_factor,
-                                     index_getter.get());
+    // Reference-wrapped: the threads below are joined before the referenced
+    // pose and cloud go out of scope, so no per-thread copy is needed.
+    integration_threads.emplace_back(
+        &SimpleTsdfIntegrator::integrateFunction, this, std::cref(T_G_C),
+        std::cref(points_C), std::cref(colors), freespace_points,
+        weight_scaling_factor, index_getter.get());
   }
 
   for (std::thread& thread : integration_threads) {
@@ -520,9 +523,12 @@ void MergedTsdfIntegrator::integrateRays(
   } else {
     std::list<std::thread> integration_threads;
     for (size_t i = 0; i < config_.integrator_threads; ++i) {
+      // Reference-wrapped: the threads below are joined before the referenced
+      // cloud and bundle maps go out of scope, so no per-thread copy is needed.
       integration_threads.emplace_back(
-          &MergedTsdfIntegrator::integrateVoxels, this, T_G_C, points_C, colors,
-          enable_anti_grazing, clearing_ray, voxel_map, clear_map, i,
+          &MergedTsdfIntegrator::integrateVoxels, this, std::cref(T_G_C),
+          std::cref(points_C), std::cref(colors), enable_anti_grazing,
+          clearing_ray, std::cref(voxel_map), std::cref(clear_map), i,
           weight_scaling_factor);
     }
 
@@ -628,10 +634,12 @@ void FastTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
 
   std::list<std::thread> integration_threads;
   for (size_t i = 0; i < config_.integrator_threads; ++i) {
-    integration_threads.emplace_back(&FastTsdfIntegrator::integrateFunction,
-                                     this, T_G_C, points_C, colors,
-                                     freespace_points, weight_scaling_factor,
-                                     index_getter.get());
+    // Reference-wrapped: the threads below are joined before the referenced
+    // pose and cloud go out of scope, so no per-thread copy is needed.
+    integration_threads.emplace_back(
+        &FastTsdfIntegrator::integrateFunction, this, std::cref(T_G_C),
+        std::cref(points_C), std::cref(colors), freespace_points,
+        weight_scaling_factor, index_getter.get());
   }
 
   for (std::thread& thread : integration_threads) {
