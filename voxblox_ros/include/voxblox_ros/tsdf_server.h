@@ -97,6 +97,9 @@ class TsdfServer {
   virtual void publishSlices();
   /// Incremental update.
   virtual void updateMesh();
+  /// Whether the mesh updateMesh() produces has anywhere to go, so a caller can
+  /// skip regenerating it for nobody.
+  bool hasMeshSubscribers() const { return mesh_pub_.getNumSubscribers() > 0; }
   /// Batch update.
   virtual bool generateMesh();
   // Publishes all available pointclouds.
