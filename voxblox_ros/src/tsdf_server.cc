@@ -809,6 +809,16 @@ void TsdfServer::clear() {
   mapped_optical_frame_transforms_.clear();
 
   tsdf_map_->getTsdfLayerPtr()->removeAllBlocks();
+
+  // Remote displays drop a mesh block only when it arrives with zero vertices,
+  // so the emptied blocks must be published before they are erased.
+  if (mesh_layer_->getNumberOfAllocatedMeshes() > 0u) {
+    mesh_layer_->clearAllMeshes();
+    voxblox_msgs::Mesh mesh_msg;
+    generateVoxbloxMeshMsg(mesh_layer_, color_mode_, &mesh_msg);
+    mesh_msg.header.frame_id = world_frame_;
+    mesh_pub_.publish(mesh_msg);
+  }
   mesh_layer_->clear();
 
   // Publish a message to reset the map to all subscribers.

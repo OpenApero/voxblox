@@ -141,6 +141,15 @@ class MeshLayer {
     }
   }
 
+  void clearAllMeshes() {
+    // we clear every mesh, but keep the blocks in the map so the empty meshes
+    // are still sent to rviz and cleared there as well
+    for (std::pair<const BlockIndex, typename Mesh::Ptr>& kv : mesh_map_) {
+      kv.second->clear();
+      kv.second->updated = true;
+    }
+  }
+
   void getAllAllocatedMeshes(BlockIndexList* meshes) const {
     meshes->clear();
     meshes->reserve(mesh_map_.size());
