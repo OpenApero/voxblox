@@ -40,6 +40,7 @@
 #include "voxblox/interpolator/interpolator.h"
 #include "voxblox/mesh/marching_cubes.h"
 #include "voxblox/mesh/mesh_layer.h"
+#include "voxblox/utils/cpu_count.h"
 #include "voxblox/utils/meshing_utils.h"
 #include "voxblox/utils/timing.h"
 
@@ -51,7 +52,7 @@ struct MeshIntegratorConfig {
   bool use_color = true;
   float min_weight = 1e-4;
 
-  size_t integrator_threads = std::thread::hardware_concurrency();
+  size_t integrator_threads = availableCpuCount();
 
   inline std::string print() const {
     std::stringstream ss;

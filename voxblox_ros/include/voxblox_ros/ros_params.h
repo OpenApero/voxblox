@@ -194,6 +194,18 @@ inline MeshIntegratorConfig getMeshIntegratorConfigFromRosParam(
   nh_private.param("mesh_use_color", mesh_integrator_config.use_color,
                    mesh_integrator_config.use_color);
 
+  // Distinct from the TSDF integrator's "integrator_threads", which shares this
+  // namespace. Read through an int because ROS params have no size_t; a
+  // non-positive value keeps the default rather than disabling the integrator.
+  int mesh_integrator_threads =
+      static_cast<int>(mesh_integrator_config.integrator_threads);
+  nh_private.param("mesh_integrator_threads", mesh_integrator_threads,
+                   mesh_integrator_threads);
+  if (mesh_integrator_threads > 0) {
+    mesh_integrator_config.integrator_threads =
+        static_cast<size_t>(mesh_integrator_threads);
+  }
+
   return mesh_integrator_config;
 }
 

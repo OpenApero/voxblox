@@ -50,6 +50,7 @@
 #include "voxblox/integrator/integrator_utils.h"
 #include "voxblox/interpolator/interpolator.h"
 #include "voxblox/utils/approx_hash_array.h"
+#include "voxblox/utils/cpu_count.h"
 
 namespace voxblox {
 
@@ -102,7 +103,7 @@ class ICP {
      * See inital_translation_weighting for further details
      */
     FloatingPoint inital_rotation_weighting = 100.0;
-    size_t num_threads = std::thread::hardware_concurrency();
+    size_t num_threads = availableCpuCount();
   };
 
   /**

@@ -23,6 +23,7 @@
 #include "voxblox/core/voxel.h"
 #include "voxblox/integrator/integrator_utils.h"
 #include "voxblox/utils/approx_hash_array.h"
+#include "voxblox/utils/cpu_count.h"
 #include "voxblox/utils/timing.h"
 
 namespace voxblox {
@@ -82,7 +83,7 @@ class TsdfIntegratorBase {
     bool use_sparsity_compensation_factor = false;
     float sparsity_compensation_factor = 1.0f;
 
-    int integrator_threads = std::thread::hardware_concurrency();
+    int integrator_threads = static_cast<int>(availableCpuCount());
 
     /// Mode of the ThreadSafeIndex, determines the integration order of the
     /// rays. Options: "mixed", "sorted"
