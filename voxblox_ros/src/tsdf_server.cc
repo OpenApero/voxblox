@@ -79,9 +79,11 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
 
   // Publishing/subscribing to a layer from another node (when using this as
   // a library, for example within a planner).
+  // Queue 10 on both ends: each message is a delta carrying the poses of the frames
+  // it covers, so a dropped one is lost geometry.
   tsdf_map_pub_ =
-      nh_private_.advertise<voxblox_msgs::Layer>("tsdf_map_out", 1, false);
-  tsdf_map_sub_ = nh_private_.subscribe("tsdf_map_in", 1,
+      nh_private_.advertise<voxblox_msgs::Layer>("tsdf_map_out", 10, false);
+  tsdf_map_sub_ = nh_private_.subscribe("tsdf_map_in", 10,
                                         &TsdfServer::tsdfMapCallback, this);
   nh_private_.param("publish_tsdf_map", publish_tsdf_map_, publish_tsdf_map_);
 

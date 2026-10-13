@@ -50,8 +50,10 @@ void EsdfServer::setupRos() {
   traversable_pub_ = nh_private_.advertise<pcl::PointCloud<pcl::PointXYZI> >(
       "traversable", 1, true);
 
+  // Queue 10 on both ends of the layer topics: each message is a delta carrying the
+  // poses of the frames it covers, so a dropped one is lost geometry.
   esdf_map_pub_ =
-      nh_private_.advertise<voxblox_msgs::Layer>("esdf_map_out", 1, false);
+      nh_private_.advertise<voxblox_msgs::Layer>("esdf_map_out", 10, false);
 
   // Set up subscriber.
   esdf_map_sub_ = nh_private_.subscribe("esdf_map_in", 10,
