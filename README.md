@@ -4,8 +4,10 @@
 
 This is the [OpenApero](https://github.com/OpenApero/openapero) fork of
 [ethz-asl/voxblox](https://github.com/ethz-asl/voxblox), maintained for
-[open_apero](https://github.com/OpenApero/openapero). Everything below this
-notice is upstream documentation and still applies.
+[open_apero](https://github.com/OpenApero/openapero). Open Apero 1.0.0 builds
+against the tag `open_apero-1.0.0`. Everything below the horizontal rule is
+upstream documentation; it still applies except where the behaviour changes
+listed here say otherwise.
 
 ## What this fork adds
 
@@ -18,7 +20,8 @@ notice is upstream documentation and still applies.
   consumers that need their own updated-block bookkeeping
   (`voxblox/include/voxblox/core/block.h`).
 * Insertion of a point cloud together with an exact-time-synchronized sensor
-  transform, instead of a TF lookup: `insertSyncPointcloud`
+  transform, instead of a TF lookup: `insertSyncPointcloud`, fed by the
+  `sync_pointcloud` and `sync_camera_transform` topics
   (`voxblox_ros/include/voxblox_ros/tsdf_server.h`).
 * A per-insertion `weight_scaling_factor` on the TSDF integrators, so
   low-confidence points can be integrated without overwriting real
@@ -39,7 +42,40 @@ notice is upstream documentation and still applies.
   (`voxblox_ros/include/voxblox_ros/tsdf_server.h`,
   `voxblox/include/voxblox/mesh/mesh_layer.h`).
 * An `optical_frame_transforms` field on the `voxblox_msgs/Layer` message
-  (`voxblox_msgs/msg/Layer.msg`).
+  (`voxblox_msgs/msg/Layer.msg`), carrying the sensor poses integrated since
+  the previous published layer.
+
+## Behaviour changes relative to upstream
+
+* **`voxblox_msgs/Layer` is not wire-compatible with upstream.** The new
+  `optical_frame_transforms` field changes the message's MD5 sum, so the
+  fork's nodes and stock voxblox nodes cannot exchange `tsdf_map_*` or
+  `esdf_map_*` layers. Build every node that exchanges layers from this fork.
+* `TsdfServer::publishMap` publishes only when new data was integrated since
+  the previous publish.
+* The `EsdfServer` update timer skips cycles in which no point cloud was
+  integrated. `EsdfServer::publishMap` returns early unless the ESDF was
+  recomputed since it was last published, and then publishes the TSDF layer
+  as well, controlled by `publish_tsdf_map` alone. Upstream published the TSDF
+  from `esdf_server` only when `publish_esdf_map` was set.
+* After a layer is published, the `kMap` update bits of its blocks are reset,
+  so the next incremental message carries only blocks changed since then.
+  Upstream never reset them, so incremental messages kept every block ever
+  updated.
+* Layers received on `tsdf_map_in` / `esdf_map_in` mark every received block
+  as updated for all consumers (mesh, ESDF, updated region, publishing), as
+  local integration does.
+* The `esdf_map_in` subscriber queue is 10 messages instead of 1.
+* `TsdfServer::updateMesh` publishes (and caches) the mesh on `~mesh` only
+  while that topic has subscribers, and the `~mesh_pcl`
+  (`pcl_msgs/PolygonMesh`) publisher is removed. `clear()` publishes the emptied mesh blocks before
+  erasing them, so remote displays drop them.
+* With `allow_clear` enabled, the TSDF integrators warn once if none of the
+  first 100 point clouds contained a clearing point (a point beyond
+  `max_ray_length_m`), which usually means the sensor's far-depth readings do
+  not exceed that range.
+* Integrator, mesh-integrator and ICP thread counts default to the CPU
+  allocation of the process instead of `std::thread::hardware_concurrency()`.
 
 ## Installation
 

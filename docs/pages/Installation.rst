@@ -6,11 +6,10 @@ These instructions are for the OpenApero fork of voxblox
 (https://github.com/OpenApero/voxblox), which vendors its catkin build
 dependencies as git submodules under ``deps/``.
 
-Install `ROS Noetic <http://wiki.ros.org/noetic/Installation/Ubuntu/>`_ (or
-`ROS Melodic <http://wiki.ros.org/melodic/Installation/Ubuntu/>`_).
-These instructions are for Ubuntu, Voxblox will also run on OS X, but you're more or less on your own there.
+Install `ROS Noetic <http://wiki.ros.org/noetic/Installation/Ubuntu/>`_ on
+Ubuntu 20.04, the only distribution this fork is built and tested on.
 
-First install additional system dependencies (swap noetic for melodic as necessary)::
+First install additional system dependencies::
 
 	sudo apt-get install python3-catkin-tools ros-noetic-cmake-modules protobuf-compiler autoconf libprotobuf-dev protobuf-c-compiler
 
