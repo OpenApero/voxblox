@@ -1,12 +1,12 @@
 #include "voxblox_ros/tsdf_server.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <minkindr_conversions/kindr_msg.h>
 #include <minkindr_conversions/kindr_tf.h>
 
 #include "voxblox_ros/conversions.h"
-#include "voxblox_ros/mesh_pcl.h"
 #include "voxblox_ros/ros_params.h"
 
 namespace voxblox {
@@ -41,6 +41,7 @@ TsdfServer::TsdfServer(const ros::NodeHandle& nh,
       accumulate_icp_corrections_(true),
       pointcloud_queue_size_(1),
       num_subscribers_tsdf_map_(0),
+      sync_queue_size_(10),
       transformer_(nh, nh_private),
       is_tsdf_updated_(true) {
   getServerConfigFromRosParam(nh_private);
@@ -315,6 +316,22 @@ bool TsdfServer::resetMapUpdateStatus() {
   return true;
 }
 
+void TsdfServer::moveMappedOpticalFrameTransforms(
+    size_t num_transforms, voxblox_msgs::Layer* layer_msg) {
+  num_transforms =
+      std::min(num_transforms, mapped_optical_frame_transforms_.size());
+  const auto first = mapped_optical_frame_transforms_.begin();
+  const auto last = first + num_transforms;
+  if (layer_msg != nullptr) {
+    for (auto it = first; it != last; ++it) {
+      geometry_msgs::Transform transform_msg;
+      tf::transformKindrToMsg(it->cast<double>(), &transform_msg);
+      layer_msg->optical_frame_transforms.push_back(transform_msg);
+    }
+  }
+  mapped_optical_frame_transforms_.erase(first, last);
+}
+
 void TsdfServer::processPointCloudMessageAndInsert(
     const sensor_msgs::PointCloud2::Ptr& pointcloud_msg,
     const Transformation& T_G_C, const bool is_freespace_pointcloud,
@@ -428,8 +445,9 @@ void TsdfServer::processPointCloudMessageAndInsert(
   // Callback for inheriting classes.
   newPoseCallback(T_G_C);
 
-  // Insert this sensor pose into the mapped optical frame transforms.
-  mapped_optical_frame_transforms_.push_back(T_G_C);
+  // Insert this sensor pose into the mapped optical frame transforms, as the
+  // cloud was integrated with it.
+  mapped_optical_frame_transforms_.push_back(T_G_C_refined);
 }
 
 // Checks if we can get the next message from queue.
@@ -613,8 +631,11 @@ void TsdfServer::publishMap(bool reset_remote_map) {
   }
 
   int subscribers = this->tsdf_map_pub_.getNumSubscribers();
-  if (is_tsdf_updated_ && subscribers > 0) {
-    if (num_subscribers_tsdf_map_ < subscribers) {
+  // A new subscriber needs the map now, even if no new data has come in: the
+  // count below records it either way, so no later publish would reset it.
+  const bool has_new_subscriber = num_subscribers_tsdf_map_ < subscribers;
+  if ((is_tsdf_updated_ || has_new_subscriber) && subscribers > 0) {
+    if (has_new_subscriber) {
       // Always reset the remote map and send all when a new subscriber
       // subscribes. A bit of overhead for other subscribers, but better than
       // inconsistent map states.
@@ -630,11 +651,8 @@ void TsdfServer::publishMap(bool reset_remote_map) {
     }
 
     // Send mapped optical frame transforms.
-    for (auto& transform : mapped_optical_frame_transforms_) {
-      geometry_msgs::Transform transform_msg;
-      tf::transformKindrToMsg(transform.cast<double>(), &transform_msg);
-      layer_msg.optical_frame_transforms.push_back(transform_msg);
-    }
+    moveMappedOpticalFrameTransforms(mapped_optical_frame_transforms_.size(),
+                                     &layer_msg);
 
     this->tsdf_map_pub_.publish(layer_msg);
     publish_map_timer.Stop();
@@ -645,9 +663,6 @@ void TsdfServer::publishMap(bool reset_remote_map) {
     for (const BlockIndex& index : block_list) {
       layer->getBlockPtrByIndex(index)->updated().reset(Update::kMap);
     }
-
-    // Clear the mapped optical frame transforms if we have published the map.
-    mapped_optical_frame_transforms_.clear();
 
     // Mark tsdf as not updated. It will be updated again when new data comes
     // in.
@@ -858,6 +873,8 @@ void TsdfServer::tsdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
     ROS_ERROR_THROTTLE(10, "Got an invalid TSDF map message!");
   } else {
     ROS_INFO_ONCE("Got an TSDF map from ROS topic!");
+    // New data, as from local integration: the ESDF and publishing follow it.
+    is_tsdf_updated_ = true;
     if (publish_pointclouds_on_update_) {
       publishPointclouds();
     }

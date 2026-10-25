@@ -32,12 +32,11 @@ class VoxbloxMeshDisplay
 
  private:
   void processMessage(const voxblox_msgs::Mesh::ConstPtr& msg);
-  bool resetServiceCallback(std_srvs::Trigger::Request& request,
-                            std_srvs::Trigger::Response& response);
+  /// Requests a reset of every mesh display; they share one service.
+  static bool resetServiceCallback(std_srvs::Trigger::Request& request,
+                                   std_srvs::Trigger::Response& response);
 
   std::unique_ptr<VoxbloxMeshVisual> visual_;
-  ros::NodeHandle nh_;
-  ros::ServiceServer reset_service_;
   std::atomic_bool reset_requested_;
 };
 

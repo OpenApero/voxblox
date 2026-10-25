@@ -61,7 +61,7 @@ class TsdfServer {
   bool getMappedOpticalFrameTransforms(
       std::vector<Eigen::Vector3d>* positions,
       std::vector<Eigen::Quaterniond>* orientations);
-  bool resetMapUpdateStatus();
+  virtual bool resetMapUpdateStatus();
 
   // weight_scaling_factor scales the measurement weight for this insertion
   // only. Use a small value (e.g. 0.01) to integrate low-confidence points
@@ -165,6 +165,13 @@ class TsdfServer {
   bool getNextPointcloudFromQueue(
       std::queue<sensor_msgs::PointCloud2::Ptr>* queue,
       sensor_msgs::PointCloud2::Ptr* pointcloud_msg, Transformation* T_G_C);
+
+  /**
+   * Moves the oldest num_transforms mapped optical-frame transforms into
+   * layer_msg, or drops them if layer_msg is null.
+   */
+  void moveMappedOpticalFrameTransforms(size_t num_transforms,
+                                        voxblox_msgs::Layer* layer_msg);
 
   ros::NodeHandle nh_;
   ros::NodeHandle nh_private_;
@@ -307,7 +314,8 @@ class TsdfServer {
   // Status variables
   bool is_tsdf_updated_;
 
-  // Map update status
+  // Map update status: optical-frame poses integrated or received and not yet
+  // published or reset, oldest first.
   std::vector<Transformation> mapped_optical_frame_transforms_;
 };
 

@@ -64,9 +64,10 @@ TsdfIntegratorBase::TsdfIntegratorBase(const Config& config,
       clearing_warning_issued_(false) {
   setLayer(layer);
 
-  if (config_.integrator_threads == 0) {
-    LOG(WARNING) << "Automatic core count failed, defaulting to 1 threads";
-    config_.integrator_threads = 1;
+  if (config_.integrator_threads <= 0) {
+    config_.integrator_threads = static_cast<int>(availableCpuCount());
+    LOG(WARNING) << "integrator_threads must be positive, defaulting to "
+                 << config_.integrator_threads << " threads";
   }
   // clearing rays have no utility if voxel_carving is disabled
   if (config_.allow_clear && !config_.voxel_carving_enabled) {
@@ -295,7 +296,7 @@ void SimpleTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
       ThreadSafeIndexFactory::get(config_.integration_order_mode, points_C));
 
   std::list<std::thread> integration_threads;
-  for (size_t i = 0; i < config_.integrator_threads; ++i) {
+  for (int i = 0; i < config_.integrator_threads; ++i) {
     // Reference-wrapped: the threads below are joined before the referenced
     // pose and cloud go out of scope, so no per-thread copy is needed.
     integration_threads.emplace_back(
@@ -522,7 +523,7 @@ void MergedTsdfIntegrator::integrateRays(
                     voxel_map, clear_map, thread_idx, weight_scaling_factor);
   } else {
     std::list<std::thread> integration_threads;
-    for (size_t i = 0; i < config_.integrator_threads; ++i) {
+    for (int i = 0; i < config_.integrator_threads; ++i) {
       // Reference-wrapped: the threads below are joined before the referenced
       // cloud and bundle maps go out of scope, so no per-thread copy is needed.
       integration_threads.emplace_back(
@@ -633,7 +634,7 @@ void FastTsdfIntegrator::integratePointCloud(const Transformation& T_G_C,
       ThreadSafeIndexFactory::get(config_.integration_order_mode, points_C));
 
   std::list<std::thread> integration_threads;
-  for (size_t i = 0; i < config_.integrator_threads; ++i) {
+  for (int i = 0; i < config_.integrator_threads; ++i) {
     // Reference-wrapped: the threads below are joined before the referenced
     // pose and cloud go out of scope, so no per-thread copy is needed.
     integration_threads.emplace_back(

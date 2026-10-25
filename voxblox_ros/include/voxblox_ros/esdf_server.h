@@ -35,6 +35,7 @@ class EsdfServer : public TsdfServer {
   virtual void publishPointclouds();
   virtual void newPoseCallback(const Transformation& T_G_C);
   virtual void publishMap(bool reset_remote_map = false);
+  virtual bool resetMapUpdateStatus();
   virtual bool saveMap(const std::string& file_path);
   virtual bool loadMap(const std::string& file_path);
 
@@ -108,6 +109,9 @@ class EsdfServer : public TsdfServer {
 
   // Variables for updating the ESDF.
   bool is_esdf_updated_;
+  // Leading entries of mapped_optical_frame_transforms_ that the ESDF covers,
+  // i.e. that were mapped before its last update.
+  size_t num_esdf_covered_transforms_;
 };
 
 }  // namespace voxblox

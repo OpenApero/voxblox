@@ -12,8 +12,9 @@ listed here say otherwise.
 ## What this fork adds
 
 * `TsdfServer` accessors for the region of the map touched since the last
-  reset, the total map region, and the optical-frame poses that were actually
-  integrated: `getUpdatedMapRegion`, `getTotalMapRegion`,
+  reset, the total map region, and the optical-frame poses the point clouds
+  were integrated at (ICP-refined when ICP is on):
+  `getUpdatedMapRegion`, `getTotalMapRegion`,
   `getMappedOpticalFrameTransforms`, `resetMapUpdateStatus`
   (`voxblox_ros/include/voxblox_ros/tsdf_server.h`).
 * Two extra `Block::Status` bits, `kBbox` and `kCache`, for out-of-tree
@@ -21,7 +22,8 @@ listed here say otherwise.
   (`voxblox/include/voxblox/core/block.h`).
 * Insertion of a point cloud together with an exact-time-synchronized sensor
   transform, instead of a TF lookup: `insertSyncPointcloud`, fed by the
-  `sync_pointcloud` and `sync_camera_transform` topics
+  `sync_pointcloud` and `sync_camera_transform` topics, which queue
+  `sync_queue_size` messages (default 10)
   (`voxblox_ros/include/voxblox_ros/tsdf_server.h`).
 * A per-insertion `weight_scaling_factor` on the TSDF integrators, so
   low-confidence points can be integrated without overwriting real
@@ -30,11 +32,12 @@ listed here say otherwise.
   alternative to the spherical max-range boundary
   (`voxblox/include/voxblox/integrator/tsdf_integrator.h`).
 * `integrator_threads` and `mesh_integrator_threads` parameters, defaulting to
-  the CPU allocation of the process rather than the machine's core count
+  the CPU allocation of the process rather than the machine's core count,
+  which a non-positive value also selects
   (`voxblox_ros/include/voxblox_ros/ros_params.h`,
   `voxblox/include/voxblox/utils/cpu_count.h`).
 * A `voxblox_mesh_display/reset` service on the RViz mesh display, so the
-  display can be cleared without user interaction
+  mesh displays of an RViz instance can be cleared without user interaction
   (`voxblox_rviz_plugin/src/voxblox_mesh_display.cc`).
 * Mesh-layer and mesh-integrator accessors plus `hasMeshSubscribers()` on
   `TsdfServer`, and `MeshLayer::clearAllMeshes()`, which empties the meshes but
@@ -42,8 +45,10 @@ listed here say otherwise.
   (`voxblox_ros/include/voxblox_ros/tsdf_server.h`,
   `voxblox/include/voxblox/mesh/mesh_layer.h`).
 * An `optical_frame_transforms` field on the `voxblox_msgs/Layer` message
-  (`voxblox_msgs/msg/Layer.msg`), carrying the sensor poses integrated since
-  the previous published layer.
+  (`voxblox_msgs/msg/Layer.msg`), which carries each integrated sensor pose
+  once: `esdf_server` sends it with the first ESDF layer whose update covered
+  it, or with the TSDF layer when no ESDF layer goes out, and `tsdf_server`
+  with the next TSDF layer.
 
 ## Behaviour changes relative to upstream
 
@@ -52,19 +57,21 @@ listed here say otherwise.
   fork's nodes and stock voxblox nodes cannot exchange `tsdf_map_*` or
   `esdf_map_*` layers. Build every node that exchanges layers from this fork.
 * `TsdfServer::publishMap` publishes only when new data was integrated since
-  the previous publish.
+  the previous publish or a new subscriber needs the whole map.
 * The `EsdfServer` update timer skips cycles in which no point cloud was
-  integrated. `EsdfServer::publishMap` returns early unless the ESDF was
-  recomputed since it was last published, and then publishes the TSDF layer
-  as well, controlled by `publish_tsdf_map` alone. Upstream published the TSDF
+  integrated and no TSDF layer received. `EsdfServer::publishMap` returns early unless the ESDF was
+  recomputed since it was last published or a new subscriber needs the whole
+  map, and then publishes the TSDF layer as well, controlled by
+  `publish_tsdf_map` alone. Upstream published the TSDF
   from `esdf_server` only when `publish_esdf_map` was set.
 * After a layer is published, the `kMap` update bits of its blocks are reset,
   so the next incremental message carries only blocks changed since then.
   Upstream never reset them, so incremental messages kept every block ever
   updated.
 * Layers received on `tsdf_map_in` / `esdf_map_in` mark every received block
-  as updated for all consumers (mesh, ESDF, updated region, publishing), as
-  local integration does.
+  as updated for all consumers (mesh, ESDF, updated region, publishing) and
+  count as new data for the ESDF update and map publishing, as local
+  integration does.
 * The `esdf_map_in` subscriber queue is 10 messages instead of 1.
 * `TsdfServer::updateMesh` publishes (and caches) the mesh on `~mesh` only
   while that topic has subscribers, and the `~mesh_pcl`

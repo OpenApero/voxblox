@@ -1,5 +1,8 @@
 #include "voxblox_rviz_plugin/voxblox_mesh_display.h"
 
+#include <mutex>
+#include <set>
+
 #include <OGRE/OgreSceneManager.h>
 #include <OGRE/OgreSceneNode.h>
 
@@ -10,17 +13,37 @@
 
 namespace voxblox_rviz_plugin {
 
+namespace {
+// A node can advertise a service name only once, so the mesh displays in one
+// RViz share a reset service, advertised while any of them exists.
+std::mutex displays_mutex;
+std::set<VoxbloxMeshDisplay*> displays;
+ros::ServiceServer reset_service;
+}  // namespace
+
 VoxbloxMeshDisplay::VoxbloxMeshDisplay() : reset_requested_(false) {}
 
 void VoxbloxMeshDisplay::onInitialize() {
   MFDClass::onInitialize();
 
-  reset_service_ = nh_.advertiseService(
-      "voxblox_mesh_display/reset",
-      &VoxbloxMeshDisplay::resetServiceCallback, this);
+  std::lock_guard<std::mutex> lock(displays_mutex);
+  if (displays.empty()) {
+    ros::NodeHandle nh;
+    reset_service =
+        nh.advertiseService("voxblox_mesh_display/reset",
+                            &VoxbloxMeshDisplay::resetServiceCallback);
+  }
+  displays.insert(this);
 }
 
-VoxbloxMeshDisplay::~VoxbloxMeshDisplay() {}
+VoxbloxMeshDisplay::~VoxbloxMeshDisplay() {
+  std::lock_guard<std::mutex> lock(displays_mutex);
+  displays.erase(this);
+  if (displays.empty()) {
+    // Unadvertise now, while ROS is up, rather than at static destruction.
+    reset_service = ros::ServiceServer();
+  }
+}
 
 void VoxbloxMeshDisplay::reset() {
   MFDClass::reset();
@@ -39,7 +62,10 @@ void VoxbloxMeshDisplay::update(float wall_dt, float ros_dt) {
 bool VoxbloxMeshDisplay::resetServiceCallback(
     std_srvs::Trigger::Request& /*request*/,
     std_srvs::Trigger::Response& response) {
-  reset_requested_.store(true);
+  std::lock_guard<std::mutex> lock(displays_mutex);
+  for (VoxbloxMeshDisplay* display : displays) {
+    display->reset_requested_.store(true);
+  }
   response.success = true;
   response.message = "Voxblox mesh display reset requested.";
   return true;
