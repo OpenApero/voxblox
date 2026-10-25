@@ -14,10 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     container: 'ros:noetic-ros-base-focal'
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
-        path: catkin_ws/src/voxblox
+    # Before checkout: the container has no git, and without it checkout falls
+    # back to a REST download that cannot fetch submodules.
     - name: Install build tools
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -27,6 +25,10 @@ jobs:
         apt install -y python3-pip python3-catkin-tools autoconf libtool git
         pip3 install osrf-pycommon
       shell: bash
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        path: catkin_ws/src/voxblox
     - name: release_build_test
       env:
         DEBIAN_FRONTEND: noninteractive
