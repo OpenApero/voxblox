@@ -1,6 +1,7 @@
 #ifndef VOXBLOX_ROS_TSDF_SERVER_H_
 #define VOXBLOX_ROS_TSDF_SERVER_H_
 
+#include <limits>
 #include <memory>
 #include <queue>
 #include <string>
@@ -173,6 +174,12 @@ class TsdfServer {
   void moveMappedOpticalFrameTransforms(size_t num_transforms,
                                         voxblox_msgs::Layer* layer_msg);
 
+  /// Widens the updated region by the voxel centers of block and clears its
+  /// Update::kBbox bit.
+  void foldBlockIntoUpdatedRegion(Block<TsdfVoxel>* block);
+  /// Folds every block flagged Update::kBbox: the ones integrated locally.
+  void foldIntegratedBlocksIntoUpdatedRegion();
+
   ros::NodeHandle nh_;
   ros::NodeHandle nh_private_;
 
@@ -317,6 +324,12 @@ class TsdfServer {
   // Map update status: optical-frame poses integrated or received and not yet
   // published or reset, oldest first.
   std::vector<Transformation> mapped_optical_frame_transforms_;
+  // Map update status: bounds, in voxel centers, of the TSDF blocks received
+  // or integrated since the last reset. Empty, min above max, until the first.
+  Point updated_region_min_ =
+      Point::Constant(std::numeric_limits<FloatingPoint>::infinity());
+  Point updated_region_max_ =
+      Point::Constant(-std::numeric_limits<FloatingPoint>::infinity());
 };
 
 }  // namespace voxblox

@@ -14,10 +14,9 @@ namespace voxblox {
 
 namespace Update {
 /// Status of which derived things still need to be updated.
-/// kBbox is consumed by updated-region accessors -- TsdfServer's, and any
-/// out-of-tree layer that unions its own updated blocks into that region; it is
-/// cleared when the caller resets the region, so the bbox reflects only blocks
-/// touched since the last reset.
+/// kBbox is set by local integration and cleared when TsdfServer folds the
+/// block into its updated region; out-of-tree layers may use it on their own
+/// layers.
 /// kCache is reserved for derived state kept outside voxblox: a consumer that
 /// maintains an incremental summary of a layer clears the bit on the blocks it
 /// processes, so each block is revisited only after it changes again.
