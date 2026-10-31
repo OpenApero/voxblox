@@ -46,9 +46,9 @@ listed here say otherwise.
   `voxblox/include/voxblox/mesh/mesh_layer.h`).
 * An `optical_frame_transforms` field on the `voxblox_msgs/Layer` message
   (`voxblox_msgs/msg/Layer.msg`), which carries each integrated sensor pose
-  once: `esdf_server` sends it with the first ESDF layer whose update covered
-  it, or with the TSDF layer when no ESDF layer goes out, and `tsdf_server`
-  with the next TSDF layer.
+  once per layer, on every layer message of one publish: with an ESDF layer
+  only the poses its ESDF covers, otherwise all. A receiving server records the
+  poses of `esdf_map_in` only.
 
 ## Behaviour changes relative to upstream
 

@@ -322,20 +322,21 @@ void TsdfServer::foldIntegratedBlocksIntoUpdatedRegion() {
   }
 }
 
-void TsdfServer::moveMappedOpticalFrameTransforms(
-    size_t num_transforms, voxblox_msgs::Layer* layer_msg) {
-  num_transforms =
-      std::min(num_transforms, mapped_optical_frame_transforms_.size());
-  const auto first = mapped_optical_frame_transforms_.begin();
-  const auto last = first + num_transforms;
-  if (layer_msg != nullptr) {
-    for (auto it = first; it != last; ++it) {
-      geometry_msgs::Transform transform_msg;
-      tf::transformKindrToMsg(it->cast<double>(), &transform_msg);
-      layer_msg->optical_frame_transforms.push_back(transform_msg);
-    }
+void TsdfServer::recordMappedOpticalFrame(const Transformation& T_G_C) {
+  mapped_optical_frame_transforms_.push_back(T_G_C);
+  unpublished_optical_frame_transforms_.push_back(T_G_C);
+}
+
+void TsdfServer::appendUnpublishedOpticalFrames(
+    size_t count, voxblox_msgs::Layer* msg) const {
+  CHECK_LE(count, unpublished_optical_frame_transforms_.size());
+  for (size_t i = 0; i < count; ++i) {
+    geometry_msgs::Transform transform_msg;
+    tf::transformKindrToMsg(
+        unpublished_optical_frame_transforms_[i].cast<double>(),
+        &transform_msg);
+    msg->optical_frame_transforms.push_back(transform_msg);
   }
-  mapped_optical_frame_transforms_.erase(first, last);
 }
 
 void TsdfServer::processPointCloudMessageAndInsert(
@@ -451,9 +452,8 @@ void TsdfServer::processPointCloudMessageAndInsert(
   // Callback for inheriting classes.
   newPoseCallback(T_G_C);
 
-  // Insert this sensor pose into the mapped optical frame transforms, as the
-  // cloud was integrated with it.
-  mapped_optical_frame_transforms_.push_back(T_G_C_refined);
+  // The cloud was integrated with this sensor pose.
+  recordMappedOpticalFrame(T_G_C_refined);
 }
 
 // Checks if we can get the next message from queue.
@@ -657,9 +657,9 @@ void TsdfServer::publishMap(bool reset_remote_map) {
       layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
     }
 
-    // Send mapped optical frame transforms.
-    moveMappedOpticalFrameTransforms(mapped_optical_frame_transforms_.size(),
-                                     &layer_msg);
+    appendUnpublishedOpticalFrames(
+        unpublished_optical_frame_transforms_.size(), &layer_msg);
+    unpublished_optical_frame_transforms_.clear();
 
     this->tsdf_map_pub_.publish(layer_msg);
     publish_map_timer.Stop();
@@ -831,6 +831,7 @@ void TsdfServer::clear() {
   is_tsdf_updated_ = true;
 
   mapped_optical_frame_transforms_.clear();
+  unpublished_optical_frame_transforms_.clear();
   setEmptyBounds(&updated_region_min_, &updated_region_max_);
 
   tsdf_map_->getTsdfLayerPtr()->removeAllBlocks();
@@ -872,12 +873,9 @@ void TsdfServer::tsdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
     }
   }
 
-  // Update the mapped optical frame transforms.
-  for (const geometry_msgs::Transform& transform_msg : layer_msg.optical_frame_transforms) {
-    kindr::minimal::QuatTransformation transform;
-    tf::transformMsgToKindr(transform_msg, &transform);
-    mapped_optical_frame_transforms_.push_back(transform.cast<FloatingPoint>());
-  }
+  // The optical frame transforms are not recorded here: the ESDF message of the
+  // same cycle names the same frames, and EsdfServer::esdfMapCallback records
+  // them.
 
   if (!success) {
     ROS_ERROR_THROTTLE(10, "Got an invalid TSDF map message!");

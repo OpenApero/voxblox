@@ -1,7 +1,5 @@
 #include "voxblox_ros/esdf_server.h"
 
-#include <algorithm>
-
 #include "voxblox_ros/conversions.h"
 #include "voxblox_ros/ros_params.h"
 
@@ -33,7 +31,7 @@ EsdfServer::EsdfServer(const ros::NodeHandle& nh,
       incremental_update_(true),
       num_subscribers_esdf_map_(0),
       is_esdf_updated_(true),
-      num_esdf_covered_transforms_(0) {
+      num_unpublished_in_esdf_(0) {
   // Set up map and integrator.
   esdf_map_.reset(new EsdfMap(esdf_config));
   esdf_integrator_.reset(new EsdfIntegrator(esdf_integrator_config,
@@ -132,8 +130,8 @@ void EsdfServer::updateEsdfEvent(const ros::TimerEvent& /*event*/) {
 
   updateEsdf();
 
-  // The transforms mapped so far are now in the ESDF as well.
-  num_esdf_covered_transforms_ = mapped_optical_frame_transforms_.size();
+  // The poses not yet published are now in the ESDF as well.
+  num_unpublished_in_esdf_ = unpublished_optical_frame_transforms_.size();
 
   // Mark tsdf as not updated. It will be updated again when new data comes in.
   is_tsdf_updated_ = false;
@@ -176,17 +174,20 @@ void EsdfServer::publishMap(bool reset_remote_map) {
     return;
   }
 
-  // Each mapped optical frame transform goes out once. The ESDF message carries
-  // only the transforms its last update covered, so a subscriber never sees a
-  // frame before its ESDF; the rest wait for the next update. Without an ESDF
-  // message the TSDF message carries them all, as the TSDF covers them all.
-  size_t num_esdf_covered_transforms = std::min(
-      num_esdf_covered_transforms_, mapped_optical_frame_transforms_.size());
-  num_esdf_covered_transforms_ = 0;
-  bool esdf_published = false;
+  // With an ESDF message, only the poses its ESDF covers go out; without one
+  // the TSDF message carries them all. Each goes out on every layer message of
+  // this publish.
+  CHECK_LE(num_unpublished_in_esdf_,
+           unpublished_optical_frame_transforms_.size());
+  const int num_esdf_subscribers =
+      publish_esdf_map_ ? this->esdf_map_pub_.getNumSubscribers() : 0;
+  const bool esdf_goes_out = num_esdf_subscribers > 0;
+  const size_t num_announced =
+      esdf_goes_out ? num_unpublished_in_esdf_
+                    : unpublished_optical_frame_transforms_.size();
 
   if (publish_esdf_map_) {
-    int subscribers = this->esdf_map_pub_.getNumSubscribers();
+    const int subscribers = num_esdf_subscribers;
     if (subscribers > 0) {
       if (num_subscribers_esdf_map_ < subscribers) {
         // Always reset the remote map and send all when a new subscriber
@@ -203,13 +204,10 @@ void EsdfServer::publishMap(bool reset_remote_map) {
         layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
       }
 
-      // Send mapped optical frame transforms.
-      moveMappedOpticalFrameTransforms(num_esdf_covered_transforms,
-                                       &layer_msg);
+      appendUnpublishedOpticalFrames(num_announced, &layer_msg);
 
       this->esdf_map_pub_.publish(layer_msg);
       publish_map_timer.Stop();
-      esdf_published = true;
 
       // Clear the updated flag if we have published the map
       BlockIndexList block_list;
@@ -246,11 +244,7 @@ void EsdfServer::publishMap(bool reset_remote_map) {
         layer_msg.action = static_cast<uint8_t>(MapDerializationAction::kReset);
       }
 
-      // Send mapped optical frame transforms, unless the ESDF message did.
-      if (!esdf_published) {
-        moveMappedOpticalFrameTransforms(
-            mapped_optical_frame_transforms_.size(), &layer_msg);
-      }
+      appendUnpublishedOpticalFrames(num_announced, &layer_msg);
 
       this->tsdf_map_pub_.publish(layer_msg);
       publish_map_timer.Stop();
@@ -261,23 +255,15 @@ void EsdfServer::publishMap(bool reset_remote_map) {
       for (const BlockIndex& index : block_list) {
         layer->getBlockPtrByIndex(index)->updated().reset(Update::kMap);
       }
-
-      // The covered transforms went out, with one message or the other.
-      num_esdf_covered_transforms = 0;
     }
 
     num_subscribers_tsdf_map_ = subscribers;
   }
 
-  // Nobody received the covered transforms; drop them so they cannot pile up.
-  if (!esdf_published) {
-    moveMappedOpticalFrameTransforms(num_esdf_covered_transforms, nullptr);
-  }
-}
-
-bool EsdfServer::resetMapUpdateStatus() {
-  num_esdf_covered_transforms_ = 0;
-  return TsdfServer::resetMapUpdateStatus();
+  unpublished_optical_frame_transforms_.erase(
+      unpublished_optical_frame_transforms_.begin(),
+      unpublished_optical_frame_transforms_.begin() + num_announced);
+  num_unpublished_in_esdf_ = 0;
 }
 
 bool EsdfServer::saveMap(const std::string& file_path) {
@@ -358,11 +344,11 @@ void EsdfServer::esdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
     }
   }
 
-  // Update the mapped optical frame transforms.
-  for (const geometry_msgs::Transform& transform_msg : layer_msg.optical_frame_transforms) {
+  for (const geometry_msgs::Transform& transform_msg :
+       layer_msg.optical_frame_transforms) {
     kindr::minimal::QuatTransformation transform;
     tf::transformMsgToKindr(transform_msg, &transform);
-    mapped_optical_frame_transforms_.push_back(transform.cast<FloatingPoint>());
+    recordMappedOpticalFrame(transform.cast<FloatingPoint>());
   }
 
   if (!success) {
@@ -371,7 +357,7 @@ void EsdfServer::esdfMapCallback(const voxblox_msgs::Layer& layer_msg) {
     ROS_INFO_ONCE("Got an ESDF map from ROS topic!");
     // New ESDF data, which covers the transforms that came with it.
     is_esdf_updated_ = true;
-    num_esdf_covered_transforms_ = mapped_optical_frame_transforms_.size();
+    num_unpublished_in_esdf_ = unpublished_optical_frame_transforms_.size();
     if (publish_pointclouds_) {
       publishPointclouds();
     }
@@ -382,7 +368,7 @@ void EsdfServer::clear() {
   esdf_map_->getEsdfLayerPtr()->removeAllBlocks();
   esdf_integrator_->clear();
   CHECK_EQ(esdf_map_->getEsdfLayerPtr()->getNumberOfAllocatedBlocks(), 0u);
-  num_esdf_covered_transforms_ = 0;
+  num_unpublished_in_esdf_ = 0;
   // The resets below go through publishMap, which publishes nothing unless the
   // ESDF changed since its last publish; clearing it is such a change.
   is_esdf_updated_ = true;

@@ -167,12 +167,12 @@ class TsdfServer {
       std::queue<sensor_msgs::PointCloud2::Ptr>* queue,
       sensor_msgs::PointCloud2::Ptr* pointcloud_msg, Transformation* T_G_C);
 
-  /**
-   * Moves the oldest num_transforms mapped optical-frame transforms into
-   * layer_msg, or drops them if layer_msg is null.
-   */
-  void moveMappedOpticalFrameTransforms(size_t num_transforms,
-                                        voxblox_msgs::Layer* layer_msg);
+  /// Records T_G_C as mapped and as unpublished.
+  void recordMappedOpticalFrame(const Transformation& T_G_C);
+  /// Appends the oldest count unpublished optical-frame transforms to msg;
+  /// count must not exceed how many there are.
+  void appendUnpublishedOpticalFrames(size_t count,
+                                      voxblox_msgs::Layer* msg) const;
 
   /// Widens the updated region by the voxel centers of block and clears its
   /// Update::kBbox bit.
@@ -321,9 +321,14 @@ class TsdfServer {
   // Status variables
   bool is_tsdf_updated_;
 
-  // Map update status: optical-frame poses integrated or received and not yet
-  // published or reset, oldest first.
+  // Map update status: optical-frame poses integrated or received since the
+  // last resetMapUpdateStatus() or clear(), oldest first.
   std::vector<Transformation> mapped_optical_frame_transforms_;
+  // Optical-frame poses not yet published, oldest first. Every recorded frame
+  // enters this queue and the mapped list; publishMap() drains the frames it
+  // announces, clear() all. EsdfServer::num_unpublished_in_esdf_ is the prefix
+  // its ESDF covers. Not synchronized: callers serialize integrate and publish.
+  std::vector<Transformation> unpublished_optical_frame_transforms_;
   // Map update status: bounds, in voxel centers, of the TSDF blocks received
   // or integrated since the last reset. Empty, min above max, until the first.
   Point updated_region_min_ =
